@@ -48,7 +48,6 @@ impl Eval {
 
     fn eval_sym(&mut self, x: &str) -> bool {
         if let Some(v) = self.lookup(x).cloned() {
-            _ = self.program.pop();
             self.program.extend(v.into_iter());
             true
         } else {
@@ -62,7 +61,7 @@ impl Eval {
     }
 
     pub(crate) fn step(&mut self) -> bool {
-        let Some(head) = self.program.pop() else {
+        let Some(head) = self.program.pop_back() else {
             return false;
         };
 
@@ -70,7 +69,7 @@ impl Eval {
             Val::Sym(x) => {
                 let ok = self.eval_sym(&x);
                 if !ok {
-                    self.program.push(Val::Sym(x));
+                    self.program.push_back(Val::Sym(x));
                 }
                 ok
             }

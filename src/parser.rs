@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use crate::val::*;
 
 pub fn parse(input: &str) -> Result<Vals, String> {
@@ -9,14 +10,14 @@ fn parse_vals<I>(chars: &mut std::iter::Peekable<I>, stop_on_close: bool) -> Res
 where
     I: Iterator<Item = char>,
 {
-    let mut vals = Vec::new();
+    let mut vals = Vals::new();
 
     while let Some(&ch) = chars.peek() {
         match ch {
             '{' => {
                 chars.next(); // consume '{'
                 let inner = parse_vals(chars, true)?;
-                vals.push(Val::Quote(inner));
+                vals.push_back(Val::Quote(inner));
             }
             '}' => {
                 chars.next(); // consume '}'
@@ -30,7 +31,7 @@ where
                 chars.next(); // skip whitespace
             }
             _ => {
-                vals.push(parse_atom(chars)?);
+                vals.push_back(parse_atom(chars)?);
             }
         }
     }

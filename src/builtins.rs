@@ -1,6 +1,6 @@
 use crate::eval::{Builtin, Eval};
 use crate::val::Val;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 pub fn builtins() -> HashMap<&'static str, Builtin> {
     let mut b = HashMap::<&'static str, Builtin>::new();
@@ -37,7 +37,7 @@ fn b_swap(e: &mut Eval) -> bool {
 
 fn b_quote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
-        e.stack.push(Val::Quote(vec![x]));
+        e.stack.push(Val::Quote(VecDeque::from([x])));
         true
     })
 }
@@ -93,11 +93,11 @@ fn b_locals(e: &mut Eval) -> bool {
                 }
 
                 for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-                    scope.insert(l.clone(), vec![v]);
+                    scope.insert(l.clone(), VecDeque::from([v]));
                 }
 
                 e.lexicon.push(scope);
-                e.program.push(Val::Sym("%{leave-scope}".to_string()));
+                e.program.push_front(Val::Sym("%{leave-scope}".to_string()));
                 e.program.extend(v.clone());
 
                 return true;
@@ -118,20 +118,22 @@ fn b_define(e: &mut Eval) -> bool {
                 && ds.len() % 2 == 0
             {
                 let mut scope = HashMap::new();
-                let (kvs, []) = ds.as_chunks() else {
+                if ds.len() % 2 == 1 {
                     eprintln!("Invalid definitions: {:?}", x);
                     break 'fail;
                 };
-                for kv in kvs {
+                for i in 0..(ds.len()/2) {
+                    let kv = [&ds[i*2], &ds[i*2+1]];
                     let [Val::Sym(k), Val::Quote(v)] = kv else {
                         eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
                         break 'fail;
                     };
                     scope.insert(k.clone(), v.clone());
+
                 }
 
                 e.lexicon.push(scope);
-                e.program.push(Val::Sym("%{leave-scope}".to_string()));
+                e.program.push_back(Val::Sym("%{leave-scope}".to_string()));
                 e.program.extend(v.clone());
 
                 return true;

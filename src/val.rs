@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt;
 
 #[derive(PartialEq, Clone)]
@@ -17,7 +18,7 @@ impl Val {
     }
 }
 
-pub type Vals = Vec<Val>;
+pub type Vals = VecDeque<Val>;
 
 impl fmt::Debug for Val {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -40,7 +41,7 @@ impl fmt::Debug for Val {
     }
 }
 
-pub struct Program<'a>(pub &'a [Val]);
+pub struct Program<'a>(pub &'a Vals);
 pub struct Values<'a>(pub &'a [Val]);
 
 impl<'a> fmt::Debug for Program<'a> {

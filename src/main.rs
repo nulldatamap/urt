@@ -14,6 +14,6 @@ fn main() {
 
     let mut e = Eval::new(ast);
     while e.step() {
-        println!("{:?} | {:?}", Program(&e.program[..]), Values(&e.stack[..]));
+        println!("{:?} | {:?}", Program(&e.program), Values(&e.stack[..]));
     }
 }
