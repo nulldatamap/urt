@@ -8,7 +8,7 @@ mod parser;
 mod val;
 
 fn main() {
-    let input = "locals {name age x y z} {name} {John} 45 00421";
+    let input = "define { two {2} x {3} } { + two 2 }";
     let ast = parse(input).unwrap();
     println!("{:?} | ", Program(&ast));
 

@@ -5,18 +5,49 @@ use std::collections::{HashMap, VecDeque};
 pub fn builtins() -> HashMap<&'static str, Builtin> {
     let mut b = HashMap::<&'static str, Builtin>::new();
 
+    // Stack
     b.insert("drop", b_drop);
     b.insert("dup", b_dup);
     b.insert("swap", b_swap);
+    // Arithmetic
+    b.insert("+", b_add);
+    b.insert("-", b_sub);
+    b.insert("*", b_mul);
+    b.insert("/", b_div);
+    b.insert("%", b_mod);
+    // Quoting
     b.insert("quote", b_quote);
     b.insert("unquote", b_unquote);
+    // Control flow
     b.insert("choose", b_choose);
+    // Scope
     b.insert("%{leave-scope}", b_leave_scope);
     b.insert("locals", b_locals);
     b.insert("define", b_define);
 
     b
 }
+
+macro_rules! b_arith {
+    ($name:ident, $op:tt) => {
+        fn $name(e: &mut Eval) -> bool {
+            e.arity(|e, [x, y]| {
+                let [Val::Int(l), Val::Int(r)] = [&x, &y] else {
+                    e.program.extend([x, y]);
+                    return false
+                };
+                e.stack.push(Val::Int(l $op r));
+                true
+            })
+        }
+    };
+}
+
+b_arith!(b_add, +);
+b_arith!(b_sub, -);
+b_arith!(b_mul, *);
+b_arith!(b_div, /);
+b_arith!(b_mod, %);
 
 fn b_drop(e: &mut Eval) -> bool {
     e.arity(|e, [_]| true)
