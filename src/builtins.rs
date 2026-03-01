@@ -1,5 +1,5 @@
 use crate::eval::{Builtin, Eval};
-use crate::val::Val;
+use crate::val::{Val, VAL_FALSE, VAL_TRUE};
 use std::collections::{HashMap, VecDeque};
 
 pub fn builtins() -> HashMap<&'static str, Builtin> {
@@ -15,6 +15,30 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("*", b_mul);
     b.insert("/", b_div);
     b.insert("%", b_mod);
+    // Comparison
+    b.insert("=", b_eq);
+    b.insert("<>", b_neq);
+    b.insert("<", b_le);
+    b.insert("<=", b_leq);
+    b.insert(">", b_ge);
+    b.insert(">=", b_geq);
+    // Logic
+    b.insert("true", b_true);
+    b.insert("false", b_false);
+    b.insert("&&", b_and);
+    b.insert("||", b_or);
+    b.insert("not", b_not);
+    // Data structure:
+    b.insert("length", b_length);
+    b.insert("empty", b_empty);
+    b.insert("append", b_append);
+    b.insert("prepend", b_prepend);
+    b.insert("head", b_head);
+    b.insert("tail", b_tail);
+    b.insert("init", b_init);
+    b.insert("last", b_last);
+    b.insert("nth", b_nth);
+    b.insert("set-nth", b_set_nth);
     // Quoting
     b.insert("quote", b_quote);
     b.insert("unquote", b_unquote);
@@ -33,7 +57,7 @@ macro_rules! b_arith {
         fn $name(e: &mut Eval) -> bool {
             e.arity(|e, [x, y]| {
                 let [Val::Int(l), Val::Int(r)] = [&x, &y] else {
-                    e.program.extend([x, y]);
+                    e.stack.extend([x, y]);
                     return false
                 };
                 e.stack.push(Val::Int(l $op r));
@@ -48,6 +72,52 @@ b_arith!(b_sub, -);
 b_arith!(b_mul, *);
 b_arith!(b_div, /);
 b_arith!(b_mod, %);
+
+fn b_eq(e: &mut Eval) -> bool {
+    e.arity(|e, [x, y]| {
+        e.stack.push(if x == y {
+            VAL_TRUE
+        } else {
+            VAL_FALSE
+        });
+        true
+    })
+}
+
+fn b_neq(e: &mut Eval) -> bool {
+    e.arity(|e, [x, y]| {
+        e.stack.push(if x != y {
+            VAL_TRUE
+        } else {
+            VAL_FALSE
+        });
+        true
+    })
+}
+
+macro_rules! b_cmp {
+    ($name:ident, $op:tt) => {
+        fn $name(e: &mut Eval) -> bool {
+            e.arity(|e, [x, y]| {
+                let [Val::Int(l), Val::Int(r)] = [&x, &y] else {
+                    e.stack.extend([x, y]);
+                    return false
+                };
+                e.stack.push(if l $op r {
+                    VAL_TRUE
+                } else {
+                    VAL_FALSE
+                });
+                true
+            })
+        }
+    };
+}
+
+b_cmp!(b_le, <);
+b_cmp!(b_leq, <=);
+b_cmp!(b_ge, >);
+b_cmp!(b_geq, >=);
 
 fn b_drop(e: &mut Eval) -> bool {
     e.arity(|e, [_]| true)
