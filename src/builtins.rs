@@ -1,5 +1,5 @@
 use crate::eval::{Builtin, Eval};
-use crate::val::{Val, VAL_FALSE, VAL_TRUE};
+use crate::val::{VAL_FALSE, VAL_TRUE, Val};
 use std::collections::{HashMap, VecDeque};
 
 pub fn builtins() -> HashMap<&'static str, Builtin> {
@@ -29,6 +29,7 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("||", b_or);
     b.insert("not", b_not);
     // Data structure:
+    /*
     b.insert("length", b_length);
     b.insert("empty", b_empty);
     b.insert("append", b_append);
@@ -39,6 +40,7 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("last", b_last);
     b.insert("nth", b_nth);
     b.insert("set-nth", b_set_nth);
+    */
     // Quoting
     b.insert("quote", b_quote);
     b.insert("unquote", b_unquote);
@@ -57,7 +59,7 @@ macro_rules! b_arith {
         fn $name(e: &mut Eval) -> bool {
             e.arity(|e, [x, y]| {
                 let [Val::Int(l), Val::Int(r)] = [&x, &y] else {
-                    e.stack.extend([x, y]);
+                    e.stack.extend([y, x]);
                     return false
                 };
                 e.stack.push(Val::Int(l $op r));
@@ -75,22 +77,14 @@ b_arith!(b_mod, %);
 
 fn b_eq(e: &mut Eval) -> bool {
     e.arity(|e, [x, y]| {
-        e.stack.push(if x == y {
-            VAL_TRUE
-        } else {
-            VAL_FALSE
-        });
+        e.stack.push(if x == y { VAL_TRUE } else { VAL_FALSE });
         true
     })
 }
 
 fn b_neq(e: &mut Eval) -> bool {
     e.arity(|e, [x, y]| {
-        e.stack.push(if x != y {
-            VAL_TRUE
-        } else {
-            VAL_FALSE
-        });
+        e.stack.push(if x != y { VAL_TRUE } else { VAL_FALSE });
         true
     })
 }
@@ -100,7 +94,7 @@ macro_rules! b_cmp {
         fn $name(e: &mut Eval) -> bool {
             e.arity(|e, [x, y]| {
                 let [Val::Int(l), Val::Int(r)] = [&x, &y] else {
-                    e.stack.extend([x, y]);
+                    e.stack.extend([y, x]);
                     return false
                 };
                 e.stack.push(if l $op r {
@@ -118,6 +112,37 @@ b_cmp!(b_le, <);
 b_cmp!(b_leq, <=);
 b_cmp!(b_ge, >);
 b_cmp!(b_geq, >=);
+
+fn b_true(e: &mut Eval) -> bool {
+    e.stack.push(VAL_TRUE);
+    true
+}
+fn b_false(e: &mut Eval) -> bool {
+    e.stack.push(VAL_FALSE);
+    true
+}
+
+fn b_or(e: &mut Eval) -> bool {
+    e.arity(|e, [x, y]| {
+        e.stack.push(if x.is_truthy() { x } else { y });
+        true
+    })
+}
+
+fn b_and(e: &mut Eval) -> bool {
+    e.arity(|e, [x, y]| {
+        e.stack.push(if !x.is_truthy() { x } else { y });
+        true
+    })
+}
+
+fn b_not(e: &mut Eval) -> bool {
+    e.arity(|e, [x]| {
+        e.stack
+            .push(if x.is_truthy() { VAL_FALSE } else { VAL_TRUE });
+        true
+    })
+}
 
 fn b_drop(e: &mut Eval) -> bool {
     e.arity(|e, [_]| true)
@@ -166,7 +191,7 @@ fn b_choose(e: &mut Eval) -> bool {
             }
             true
         } else {
-            e.program.extend([x, y, z]);
+            e.stack.extend([z, y, x]);
             false
         }
     })
@@ -183,7 +208,16 @@ fn b_locals(e: &mut Eval) -> bool {
                 && let Val::Quote(v) = &y
                 && ls.len() <= e.stack.len()
             {
-                let mut scope = HashMap::new();
+                let in_tail_pos = e.program.back() == Some(&Val::Sym("%{leave-scope}".to_string()));
+                let mut scope = if in_tail_pos {
+                    let Some(s) = e.lexicon.pop() else {
+                        eprintln!("Invalid scope!");
+                        break 'fail;
+                    };
+                    s
+                } else {
+                    HashMap::new()
+                };
                 let mut lss = vec![];
                 for l in ls.iter().rev() {
                     let Val::Sym(l) = l else {
@@ -198,7 +232,9 @@ fn b_locals(e: &mut Eval) -> bool {
                 }
 
                 e.lexicon.push(scope);
-                e.program.push_front(Val::Sym("%{leave-scope}".to_string()));
+                if !in_tail_pos {
+                    e.program.push_back(Val::Sym("%{leave-scope}".to_string()));
+                }
                 e.program.extend(v.clone());
 
                 return true;
@@ -207,7 +243,7 @@ fn b_locals(e: &mut Eval) -> bool {
                 break 'fail;
             }
         }
-        e.program.extend([x, y]);
+        e.stack.extend([y, x]);
         false
     })
 }
@@ -218,23 +254,34 @@ fn b_define(e: &mut Eval) -> bool {
                 && let Val::Quote(v) = &y
                 && ds.len() % 2 == 0
             {
-                let mut scope = HashMap::new();
+                let in_tail_pos =
+                    e.program.back() == Some(&Val::Sym("%{leave-scope}".to_string()));
+                let mut scope = if in_tail_pos {
+                    let Some(s) = e.lexicon.pop() else {
+                        eprintln!("Invalid scope!");
+                        break 'fail;
+                    };
+                    s
+                } else {
+                    HashMap::new()
+                };
                 if ds.len() % 2 == 1 {
                     eprintln!("Invalid definitions: {:?}", x);
                     break 'fail;
                 };
-                for i in 0..(ds.len()/2) {
-                    let kv = [&ds[i*2], &ds[i*2+1]];
+                for i in 0..(ds.len() / 2) {
+                    let kv = [&ds[i * 2], &ds[i * 2 + 1]];
                     let [Val::Sym(k), Val::Quote(v)] = kv else {
                         eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
                         break 'fail;
                     };
                     scope.insert(k.clone(), v.clone());
-
                 }
 
                 e.lexicon.push(scope);
-                e.program.push_back(Val::Sym("%{leave-scope}".to_string()));
+                if !in_tail_pos {
+                    e.program.push_back(Val::Sym("%{leave-scope}".to_string()));
+                }
                 e.program.extend(v.clone());
 
                 return true;
@@ -243,7 +290,7 @@ fn b_define(e: &mut Eval) -> bool {
                 break 'fail;
             }
         }
-        e.program.extend([x, y]);
+        e.stack.extend([y, x]);
         false
     })
 }

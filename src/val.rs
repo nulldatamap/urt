@@ -12,7 +12,6 @@ pub const VAL_TRUE: Val = Val::Int(1);
 pub const VAL_FALSE: Val = Val::Int(0);
 pub const VAL_EMPTY: Val = Val::Quote(VecDeque::new());
 
-
 impl Val {
     pub(crate) fn is_truthy(&self) -> bool {
         match self {

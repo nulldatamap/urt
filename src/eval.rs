@@ -1,6 +1,8 @@
 use crate::builtins;
-use crate::val::{Val, Vals};
-use std::collections::HashMap;
+use crate::val::{Program, Val, Vals, Values};
+use std::collections::{HashMap, VecDeque};
+use std::fmt::Write;
+use std::ops::Add;
 
 pub type Builtin = fn(&mut crate::eval::Eval) -> bool;
 
@@ -9,6 +11,45 @@ pub struct Eval {
     pub(crate) lexicon: Vec<HashMap<String, Vals>>,
     pub(crate) program: Vals,
     pub(crate) stack: Vec<Val>,
+}
+
+pub fn eval(program: Vals) -> Result<Vals, Eval> {
+    let mut e = Eval::new(program);
+    while e.step() {}
+    if e.program.is_empty() {
+        e.stack.reverse();
+        Ok(e.stack.into())
+    } else {
+        Err(e)
+    }
+}
+
+pub fn trace(program: Vals) -> Result<Vals, Eval> {
+    let mut e = Eval::new(program);
+    while e.step() {
+        let mut scopes_s = String::new();
+        let mut scope_s = String::new();
+        for scope in &e.lexicon {
+            scope_s.push_str("{ ");
+            for kv in scope.iter() {
+                write!(scope_s, "{} {{{:?}}} ", kv.0, Program(&kv.1)).unwrap();
+            }
+            scope_s.push_str("} ");
+            scopes_s.extend(scope_s.drain(..));
+        }
+        println!(
+            "{:?} | {:?}\t\t{}",
+            Program(&e.program),
+            Values(&e.stack),
+            scopes_s
+        )
+    }
+    if e.program.is_empty() {
+        e.stack.reverse();
+        Ok(e.stack.into())
+    } else {
+        Err(e)
+    }
 }
 
 impl Eval {

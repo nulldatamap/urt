@@ -5,6 +5,7 @@ use crate::val::{Program, Values};
 mod builtins;
 mod eval;
 mod parser;
+mod tests;
 mod val;
 
 fn main() {
