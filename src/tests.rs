@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use crate::eval::{eval, trace};
+use crate::eval::eval;
 use crate::parser::parse;
-use crate::val::{Program, Val, Vals, Values};
+use crate::val::{Program, Val, Values};
 
 fn evals(program: &'static str, stack: &'static str) {
     let p = parse(program).unwrap();
@@ -193,9 +193,12 @@ fn scope() {
 #[test]
 fn recursion() {
     // Naive:
-    evals("define { fib { locals { x } { choose { + fib - x 1 fib - x 2 } {1} > x 2 } } }\
+    evals(
+        "define { fib { locals { x } { choose { + fib - x 1 fib - x 2 } {1} > x 2 } } }\
     { fib 6 }\
-    ", "8");
+    ",
+        "8",
+    );
     // Iterative:
     evals(
         "

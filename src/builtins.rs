@@ -1,5 +1,5 @@
 use crate::eval::{Builtin, Eval};
-use crate::val::{VAL_FALSE, VAL_TRUE, Val, Vals, Program};
+use crate::val::{Program, VAL_FALSE, VAL_TRUE, Val, Vals};
 use std::collections::{HashMap, VecDeque};
 
 pub fn builtins() -> HashMap<&'static str, Builtin> {
@@ -29,17 +29,21 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("||", b_or);
     b.insert("not", b_not);
     // Data structure:
+    // b.insert("length", b_length);
     /*
-    b.insert("length", b_length);
-    b.insert("empty", b_empty);
     b.insert("append", b_append);
-    b.insert("prepend", b_prepend);
+    b.insert("push-back", b_push_back);
+    b.insert("push-front", b_push_front);
     b.insert("head", b_head);
     b.insert("tail", b_tail);
     b.insert("init", b_init);
     b.insert("last", b_last);
     b.insert("nth", b_nth);
     b.insert("set-nth", b_set_nth);
+    // b.insert("insert", b_insert);
+    // b.insert("remove-nth", b_remove_nth);
+    // b.insert("swap-remove-nth", b_swap_remove_nth);
+    // b.insert("concat", b_concat);
     */
     // Quoting
     b.insert("quote", b_quote);
@@ -202,8 +206,10 @@ fn b_leave_scope(e: &mut Eval) -> bool {
 }
 
 fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
-  where F: FnOnce(&Vals, &Eval) -> bool,
-        G: FnOnce(&Vals, &mut HashMap<String, Vals>, &mut Eval) -> bool {
+where
+    F: FnOnce(&Vals, &Eval) -> bool,
+    G: FnOnce(&Vals, &mut HashMap<String, Vals>, &mut Eval) -> bool,
+{
     e.arity(|e, [x, y]| {
         'fail: loop {
             if let Val::Quote(ls) = &x
@@ -227,7 +233,7 @@ fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
                     HashMap::new()
                 };
                 if !build_scope(ls, &mut scope, e) {
-                    break 'fail
+                    break 'fail;
                 }
 
                 e.lexicon.push(scope);
@@ -245,43 +251,48 @@ fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
         e.stack.extend([y, x]);
         false
     })
-
 }
 
 fn b_locals(e: &mut Eval) -> bool {
-    scoped_helper(e, |ls, e| ls.len() <= e.stack.len(),
-    |ls, scope, e| {
-        let mut lss = vec![];
-        for l in ls.iter().rev() {
-            let Val::Sym(l) = l else {
-                eprintln!("Invalid local: {:?}", l);
-                return false
-            };
-            lss.push(l.clone());
-        }
+    scoped_helper(
+        e,
+        |ls, e| ls.len() <= e.stack.len(),
+        |ls, scope, e| {
+            let mut lss = vec![];
+            for l in ls.iter().rev() {
+                let Val::Sym(l) = l else {
+                    eprintln!("Invalid local: {:?}", l);
+                    return false;
+                };
+                lss.push(l.clone());
+            }
 
-        for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-            scope.insert(l.clone(), VecDeque::from([v]));
-        }
+            for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
+                scope.insert(l.clone(), VecDeque::from([v]));
+            }
 
-        true
-    })
+            true
+        },
+    )
 }
 fn b_define(e: &mut Eval) -> bool {
-    scoped_helper(e, |ds, e| ds.len() % 2 == 0,
-    |ds, scope, e| {
-        if ds.len() % 2 == 1 {
-            eprintln!("Invalid definitions: {{{:?}}}", Program(ds));
-            return false
-        };
-        for i in 0..(ds.len() / 2) {
-            let kv = [&ds[i * 2], &ds[i * 2 + 1]];
-            let [Val::Sym(k), Val::Quote(v)] = kv else {
-                eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
-                return false
+    scoped_helper(
+        e,
+        |ds, e| ds.len() % 2 == 0,
+        |ds, scope, e| {
+            if ds.len() % 2 == 1 {
+                eprintln!("Invalid definitions: {{{:?}}}", Program(ds));
+                return false;
             };
-            scope.insert(k.clone(), v.clone());
-        }
-        true
-    })
+            for i in 0..(ds.len() / 2) {
+                let kv = [&ds[i * 2], &ds[i * 2 + 1]];
+                let [Val::Sym(k), Val::Quote(v)] = kv else {
+                    eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
+                    return false;
+                };
+                scope.insert(k.clone(), v.clone());
+            }
+            true
+        },
+    )
 }

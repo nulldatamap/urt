@@ -1,5 +1,4 @@
 use crate::val::*;
-use std::collections::VecDeque;
 
 pub fn parse(input: &str) -> Result<Vals, String> {
     let mut chars = input.chars().peekable();
@@ -67,7 +66,11 @@ where
     }
 
     if chs.all(|c| c.is_ascii_digit()) {
-        Ok(Val::Int(buf.parse::<i64>().map_err(|e| { let mut x = e.to_string(); x.push_str(&buf); x })?))
+        Ok(Val::Int(buf.parse::<i64>().map_err(|e| {
+            let mut x = e.to_string();
+            x.push_str(&buf);
+            x
+        })?))
     } else {
         Ok(Val::Sym(buf))
     }
