@@ -1,5 +1,5 @@
 use crate::eval::{Builtin, Eval};
-use crate::val::{VAL_FALSE, VAL_TRUE, Val};
+use crate::val::{VAL_FALSE, VAL_TRUE, Val, Vals, Program};
 use std::collections::{HashMap, VecDeque};
 
 pub fn builtins() -> HashMap<&'static str, Builtin> {
@@ -201,13 +201,21 @@ fn b_leave_scope(e: &mut Eval) -> bool {
     e.lexicon.pop().is_some()
 }
 
-fn b_locals(e: &mut Eval) -> bool {
+fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
+  where F: FnOnce(&Vals, &Eval) -> bool,
+        G: FnOnce(&Vals, &mut HashMap<String, Vals>, &mut Eval) -> bool {
     e.arity(|e, [x, y]| {
         'fail: loop {
             if let Val::Quote(ls) = &x
                 && let Val::Quote(v) = &y
-                && ls.len() <= e.stack.len()
+                && fst_cond(ls, e)
             {
+                // Tail "call" optimization:
+                // Basically in a traditional "tail call" position the last operation is a "return"
+                // In our case that's a %{leave-scope}
+                // Since there's no residual program between the active scope and the parent scope
+                // We can safely just merge the two scopes at scope introduction time and then elide
+                // the %{leave-scope}. This even works for non-identical scopes!
                 let in_tail_pos = e.program.back() == Some(&Val::Sym("%{leave-scope}".to_string()));
                 let mut scope = if in_tail_pos {
                     let Some(s) = e.lexicon.pop() else {
@@ -218,17 +226,8 @@ fn b_locals(e: &mut Eval) -> bool {
                 } else {
                     HashMap::new()
                 };
-                let mut lss = vec![];
-                for l in ls.iter().rev() {
-                    let Val::Sym(l) = l else {
-                        eprintln!("Invalid local: {:?}", l);
-                        break 'fail;
-                    };
-                    lss.push(l.clone());
-                }
-
-                for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-                    scope.insert(l.clone(), VecDeque::from([v]));
+                if !build_scope(ls, &mut scope, e) {
+                    break 'fail
                 }
 
                 e.lexicon.push(scope);
@@ -246,51 +245,43 @@ fn b_locals(e: &mut Eval) -> bool {
         e.stack.extend([y, x]);
         false
     })
+
+}
+
+fn b_locals(e: &mut Eval) -> bool {
+    scoped_helper(e, |ls, e| ls.len() <= e.stack.len(),
+    |ls, scope, e| {
+        let mut lss = vec![];
+        for l in ls.iter().rev() {
+            let Val::Sym(l) = l else {
+                eprintln!("Invalid local: {:?}", l);
+                return false
+            };
+            lss.push(l.clone());
+        }
+
+        for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
+            scope.insert(l.clone(), VecDeque::from([v]));
+        }
+
+        true
+    })
 }
 fn b_define(e: &mut Eval) -> bool {
-    e.arity(|e, [x, y]| {
-        'fail: loop {
-            if let Val::Quote(ds) = &x
-                && let Val::Quote(v) = &y
-                && ds.len() % 2 == 0
-            {
-                let in_tail_pos =
-                    e.program.back() == Some(&Val::Sym("%{leave-scope}".to_string()));
-                let mut scope = if in_tail_pos {
-                    let Some(s) = e.lexicon.pop() else {
-                        eprintln!("Invalid scope!");
-                        break 'fail;
-                    };
-                    s
-                } else {
-                    HashMap::new()
-                };
-                if ds.len() % 2 == 1 {
-                    eprintln!("Invalid definitions: {:?}", x);
-                    break 'fail;
-                };
-                for i in 0..(ds.len() / 2) {
-                    let kv = [&ds[i * 2], &ds[i * 2 + 1]];
-                    let [Val::Sym(k), Val::Quote(v)] = kv else {
-                        eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
-                        break 'fail;
-                    };
-                    scope.insert(k.clone(), v.clone());
-                }
-
-                e.lexicon.push(scope);
-                if !in_tail_pos {
-                    e.program.push_back(Val::Sym("%{leave-scope}".to_string()));
-                }
-                e.program.extend(v.clone());
-
-                return true;
-            } else {
-                eprintln!("Invalid arguments: define {:?} {:?}", x, y);
-                break 'fail;
-            }
+    scoped_helper(e, |ds, e| ds.len() % 2 == 0,
+    |ds, scope, e| {
+        if ds.len() % 2 == 1 {
+            eprintln!("Invalid definitions: {{{:?}}}", Program(ds));
+            return false
+        };
+        for i in 0..(ds.len() / 2) {
+            let kv = [&ds[i * 2], &ds[i * 2 + 1]];
+            let [Val::Sym(k), Val::Quote(v)] = kv else {
+                eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
+                return false
+            };
+            scope.insert(k.clone(), v.clone());
         }
-        e.stack.extend([y, x]);
-        false
+        true
     })
 }
