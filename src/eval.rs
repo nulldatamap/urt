@@ -1,10 +1,9 @@
 use crate::builtins;
 use crate::val::{Program, Val, Vals, Values};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::Write;
-use std::ops::Add;
 
-pub type Builtin = fn(&mut crate::eval::Eval) -> bool;
+pub type Builtin = fn(&mut Eval) -> bool;
 
 pub struct Eval {
     builtins: HashMap<&'static str, Builtin>,

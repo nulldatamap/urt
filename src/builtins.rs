@@ -29,9 +29,9 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("||", b_or);
     b.insert("not", b_not);
     // Data structure:
-    // b.insert("length", b_length);
-    /*
+    b.insert("length", b_length);
     b.insert("append", b_append);
+    /*
     b.insert("push-back", b_push_back);
     b.insert("push-front", b_push_front);
     b.insert("head", b_head);
@@ -56,6 +56,23 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("define", b_define);
 
     b
+}
+
+fn b_drop(e: &mut Eval) -> bool {
+    e.arity(|_e, [_]| true)
+}
+fn b_dup(e: &mut Eval) -> bool {
+    e.arity(|e, [x]| {
+        e.stack.extend([x.clone(), x]);
+        true
+    })
+}
+
+fn b_swap(e: &mut Eval) -> bool {
+    e.arity(|e, [x, y]| {
+        e.stack.extend([x, y]);
+        true
+    })
 }
 
 macro_rules! b_arith {
@@ -148,22 +165,37 @@ fn b_not(e: &mut Eval) -> bool {
     })
 }
 
-fn b_drop(e: &mut Eval) -> bool {
-    e.arity(|e, [_]| true)
-}
-fn b_dup(e: &mut Eval) -> bool {
-    e.arity(|e, [x]| {
-        e.stack.extend([x.clone(), x]);
-        true
-    })
+macro_rules! b_typed {
+    ($name:ident ($e:ident, $($xs:ident : $tys:pat),+) $body:stmt) => {
+        fn $name(e: &mut Eval) -> bool {
+            e.arity(|$e, [$($xs),+]| {
+                if $(let $tys = &$xs)&&+ {
+                    $body
+                    true
+                } else {
+                    eprintln!("Type error for `{}`", stringify!($name));
+                    $e.stack.extend([$($xs),+].into_iter().rev());
+                    false
+                }
+            })
+        }
+    };
 }
 
-fn b_swap(e: &mut Eval) -> bool {
-    e.arity(|e, [x, y]| {
-        e.stack.extend([x, y]);
-        true
-    })
-}
+b_typed!(
+    b_length(e, x : Val::Quote(vs)) {
+        e.stack.push(Val::Int(vs.len() as i64));
+    }
+);
+
+b_typed!(
+    b_append(e, x : Val::Quote(ls), y : Val::Quote(rs)) {
+        let mut new = Vals::with_capacity(ls.len() + rs.len());
+        new.extend(ls.iter().cloned());
+        new.extend(rs.iter().cloned());
+        e.stack.push(Val::Quote(new));
+    }
+);
 
 fn b_quote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
@@ -278,8 +310,8 @@ fn b_locals(e: &mut Eval) -> bool {
 fn b_define(e: &mut Eval) -> bool {
     scoped_helper(
         e,
-        |ds, e| ds.len() % 2 == 0,
-        |ds, scope, e| {
+        |ds, _e| ds.len() % 2 == 0,
+        |ds, scope, _e| {
             if ds.len() % 2 == 1 {
                 eprintln!("Invalid definitions: {{{:?}}}", Program(ds));
                 return false;
