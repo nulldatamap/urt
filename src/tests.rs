@@ -210,3 +210,68 @@ fn recursion() {
         "8",
     );
 }
+
+#[test]
+fn list() {
+    evals("length {}", "0");
+    evals("length {1 2 3}", "3");
+    fails("length 1", "length", "1");
+
+    evals("append {} {}", "{}");
+    evals("append {1} {}", "{1}");
+    evals("append {} {2}", "{2}");
+    evals("append {1} {2}", "{1 2}");
+    evals("append dup {1 2 3}", "{1 2 3 1 2 3}");
+    fails("append 1 {}", "append", "1 {}");
+    fails("append {} 1", "append", "{} 1");
+
+    evals("push-back 4 {1 2 3}", "{1 2 3 4}");
+    evals("push-back 1 {}", "{1}");
+    evals("push-back {1} {}", "{{1}}");
+    fails("push-back 1 1", "push-back", "1 1");
+
+    evals("push-front 0 {1 2 3}", "{0 1 2 3}");
+    evals("push-front 1 {}", "{1}");
+    evals("push-front {1} {}", "{{1}}");
+    fails("push-front 1 1", "push-front", "1 1");
+
+    evals("head {1 2 3}", "1");
+    evals("head {1}", "1");
+    fails("head 1", "head", "1");
+    fails("head {}", "head", "{}");
+
+    evals("tail {1 2 3}", "{2 3}");
+    evals("tail {3}", "{}");
+    fails("tail 1", "tail", "1");
+    fails("tail {}", "tail", "{}");
+
+    evals("init {1 2 3}", "{1 2}");
+    evals("init {1}", "{}");
+    fails("init 1", "init", "1");
+    fails("init {}", "init", "{}");
+
+    evals("last {1 2 3}", "3");
+    evals("last {3}", "3");
+    fails("last {}", "last", "{}");
+
+    evals("nth 0 {1 2 3}", "1");
+    evals("nth 2 {1 2 3}", "3");
+    evals("nth -1 {1 2 3}", "3");
+    evals("nth -3 {1 2 3}", "1");
+    fails("nth 0 {}", "nth", "0 {}");
+    fails("nth -1 {}", "nth", "-1 {}");
+    fails("nth 1 {1}", "nth", "1 {1}");
+    fails("nth 0 0", "nth", "0 0");
+    fails("nth {1 2 3} 0", "nth", "0 0");
+
+    evals("set-nth 0 99 {1 2 3}", "{99 2 3}");
+    evals("set-nth 2 99 {1 2 3}", "{1 2 99}");
+    evals("set-nth -1 99 {1 2 3}", "{1 2 99}");
+    evals("set-nth -3 99 {1 2 3}", "{99 2 3}");
+    evals("set-nth 0 {} {1}", "{{}}");
+    fails("set-nth 0 99 {}", "set-nth", "0 99 {}");
+    fails("set-nth -1 99 {}", "set-nth", "-1 99 {}");
+    fails("set-nth 1 99 {1}", "set-nth", "1 99 {1}");
+    fails("set-nth 0 99 0", "set-nth", "0 99 0");
+    fails("set-nth {1 2 3} 99 0", "set-nth", "{1 2 3} 99 0");
+}
