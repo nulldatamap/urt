@@ -61,8 +61,13 @@ where
         return Err("unexpected token".into());
     }
 
-    if buf.chars().all(|c| c.is_ascii_digit()) {
-        Ok(Val::Int(buf.parse::<i64>().map_err(|e| e.to_string())?))
+    let mut chs = buf.chars();
+    if buf.starts_with('-') && buf.len() > 1 {
+        _ = chs.next();
+    }
+
+    if chs.all(|c| c.is_ascii_digit()) {
+        Ok(Val::Int(buf.parse::<i64>().map_err(|e| { let mut x = e.to_string(); x.push_str(&buf); x })?))
     } else {
         Ok(Val::Sym(buf))
     }

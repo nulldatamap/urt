@@ -60,6 +60,9 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
 fn basics() {
     evals("1 2 3", "1 2 3");
     evals("{1 2 3}", "{1 2 3}");
+    evals("-1", "-1");
+    evals("{a b c}", "{a b c}");
+    evals("{{} {{}} {}}", "{{} {{}} {}}");
 }
 
 #[test]
@@ -174,16 +177,14 @@ fn scope() {
     );
     evals("locals {x} {x} 1 locals {x} {x} 2", "1 2");
     evals("locals {x} {locals {x} {locals {x} {x} 3} 2} 1", "3");
+    fails("locals {x y} {x} 1", "locals", "{x y} {x} 1");
+    fails("locals {1} {x} 1", "locals", " {1} {x} 1");
+    fails("x locals {x} {x} 1", "x", "1");
 
     evals("define {} {1}", "1");
     evals("define {x {1} y {2}} {+ x y}", "3");
     evals("define {x {1}} { + x define {x {2}} { x } }", "3");
     evals("define {x {1}} {x} define {x {2}} {x}", "1 2");
-
-    fails("locals {x y} {x} 1", "locals", "{x y} {x} 1");
-    fails("locals {1} {x} 1", "locals", " {1} {x} 1");
-    fails("x locals {x} {x} 1", "x", "1");
-
     fails("define {x 1} {}", "define", " {x 1} {}");
     fails("define {x} {}", "define", " {x} {}");
     fails("x define {x {1}} {}", "x", "");
@@ -192,9 +193,9 @@ fn scope() {
 #[test]
 fn recursion() {
     // Naive:
-    // evals("define { fib { locals { x } { choose { + fib - x 1 fib - x 2 } {1} > x 2 } } }\
-    // { fib 6 }\
-    // ", "8");
+    evals("define { fib { locals { x } { choose { + fib - x 1 fib - x 2 } {1} > x 2 } } }\
+    { fib 6 }\
+    ", "8");
     // Iterative:
     evals(
         "
