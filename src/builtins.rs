@@ -31,13 +31,13 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     // Data structure:
     b.insert("length", b_length);
     b.insert("append", b_append);
-    /*
     b.insert("push-back", b_push_back);
     b.insert("push-front", b_push_front);
     b.insert("head", b_head);
     b.insert("tail", b_tail);
     b.insert("init", b_init);
     b.insert("last", b_last);
+    /*
     b.insert("nth", b_nth);
     b.insert("set-nth", b_set_nth);
     // b.insert("insert", b_insert);
@@ -166,19 +166,22 @@ fn b_not(e: &mut Eval) -> bool {
 }
 
 macro_rules! b_typed {
-    ($name:ident ($e:ident, $($xs:ident : $tys:pat),+) $body:stmt) => {
-        fn $name(e: &mut Eval) -> bool {
+    ($($name:ident ($e:ident, $($xs:ident : $tys:pat),+) $body:stmt)+) => {
+        $(fn $name(e: &mut Eval) -> bool {
             e.arity(|$e, [$($xs),+]| {
-                if $(let $tys = &$xs)&&+ {
-                    $body
-                    true
-                } else {
-                    eprintln!("Type error for `{}`", stringify!($name));
-                    $e.stack.extend([$($xs),+].into_iter().rev());
-                    false
+                match [$($xs),+] {
+                    [$($tys),+]=> {
+                        $body
+                        true
+                    },
+                    xs => {
+                        eprintln!("Type error for `{}`", stringify!($name));
+                        $e.stack.extend(xs.into_iter().rev());
+                        false
+                    }
                 }
             })
-        }
+        })+
     };
 }
 
@@ -186,14 +189,60 @@ b_typed!(
     b_length(e, x : Val::Quote(vs)) {
         e.stack.push(Val::Int(vs.len() as i64));
     }
-);
 
-b_typed!(
-    b_append(e, x : Val::Quote(ls), y : Val::Quote(rs)) {
-        let mut new = Vals::with_capacity(ls.len() + rs.len());
-        new.extend(ls.iter().cloned());
-        new.extend(rs.iter().cloned());
-        e.stack.push(Val::Quote(new));
+    b_append(e, x : Val::Quote(mut ls), y : Val::Quote(mut rs)) {
+        ls.extend(rs.drain(..));
+        e.stack.push(Val::Quote(ls));
+    }
+
+    b_push_back(e, x : v, y : Val::Quote(mut vs)) {
+        vs.push_back(v);
+        e.stack.push(Val::Quote(vs));
+    }
+
+    b_push_front(e, x : v, y : Val::Quote(mut vs)) {
+        vs.push_front(v);
+        e.stack.push(Val::Quote(vs));
+    }
+
+    b_head(e, x : Val::Quote(mut vs)) {
+        if vs.len() == 0 {
+            eprintln!("Can't use `head` on an empty list");
+            e.stack.push(Val::Quote(vs));
+            return false
+        }
+
+        e.stack.push(vs.pop_front().unwrap());
+    }
+
+    b_tail(e, x : Val::Quote(mut vs)) {
+        if vs.len() == 0 {
+            eprintln!("Can't use `tail` on an empty list");
+            e.stack.push(Val::Quote(vs));
+            return false
+        }
+        _ = vs.pop_front();
+        e.stack.push(Val::Quote(vs));
+    }
+
+    b_last(e, x : Val::Quote(mut vs)) {
+        if vs.len() == 0 {
+            eprintln!("Can't use `last` on an empty list");
+            e.stack.push(Val::Quote(vs));
+            return false
+        }
+
+        e.stack.push(vs.pop_back().unwrap());
+    }
+
+    b_init(e, x : Val::Quote(mut vs)) {
+        if vs.len() == 0 {
+            eprintln!("Can't use `init` on an empty list");
+            e.stack.push(Val::Quote(vs));
+            return false
+        }
+        _ = vs.pop_back();
+        e.stack.push(Val::Quote(vs));
     }
 );
 
