@@ -8,7 +8,7 @@ fn evals(program: &'static str, stack: &'static str) {
     let p = parse(program).unwrap();
     let exp = parse(stack).unwrap();
     match eval(p) {
-        Ok(got) => assert_eq!(got, exp),
+        Ok(got) => assert_eq!(got, exp, "evaluating: {}", program),
         Err(e) => {
             panic!(
                 "Evaluation failed:\n{:?} | {:?}",
@@ -265,7 +265,7 @@ fn list() {
     fails("nth -1 {}", "nth", "-1 {}");
     fails("nth 1 {1}", "nth", "1 {1}");
     fails("nth 0 0", "nth", "0 0");
-    fails("nth {1 2 3} 0", "nth", "0 0");
+    fails("nth {1 2 3} 0", "nth", "{1 2 3} 0");
 
     evals("set-nth 0 99 {1 2 3}", "{99 2 3}");
     evals("set-nth 2 99 {1 2 3}", "{1 2 99}");
@@ -277,4 +277,77 @@ fn list() {
     fails("set-nth 1 99 {1}", "set-nth", "1 99 {1}");
     fails("set-nth 0 99 0", "set-nth", "0 99 0");
     fails("set-nth {1 2 3} 99 0", "set-nth", "{1 2 3} 99 0");
+
+    evals("insert-before 0 99 {1 2 3}", "{99 1 2 3}");
+    evals("insert-before 2 99 {1 2 3}", "{1 2 99 3}");
+    evals("insert-before 3 99 {1 2 3}", "{1 2 3 99}");
+    evals("insert-before -1 99 {1 2 3}", "{1 2 99 3}");
+    evals("insert-before -3 99 {1 2 3}", "{99 1 2 3}");
+    evals("insert-before 0 {} {1}", "{{} 1}");
+    evals("insert-before 0 99 {}", "{99}");
+    evals("insert-before -1 99 {}", "{99}");
+    fails("insert-before -2 99 {}", "insert-before", "-2 99 {}");
+    fails("insert-before 2 99 {1}", "insert-before", "2 99 {1}");
+    fails("insert-before 0 99 0", "insert-before", "0 99 0");
+    fails(
+        "insert-before {1 2 3} 99 {}",
+        "insert-before",
+        "{1 2 3} 99 {}",
+    );
+
+    evals("remove-nth 0 {1 2 3}", "{2 3}");
+    evals("remove-nth 1 {1 2 3}", "{1 3}");
+    evals("remove-nth 2 {1 2 3}", "{1 2}");
+    evals("remove-nth -1 {1 2 3}", "{1 2}");
+    evals("remove-nth -2 {1 2 3}", "{1 3}");
+    evals("remove-nth 0 {1}", "{}");
+    fails("remove-nth 0 {}", "remove-nth", "0 {}");
+    fails("remove-nth 3 {1 2 3}", "remove-nth", "3 {1 2 3}");
+    fails("remove-nth 3 0", "remove-nth", "3 0");
+    fails("remove-nth {1 2 3} {}", "remove-nth", "{1 2 3} {}");
+
+    evals("swap-remove-nth 0 {1 2 3}", "{3 2}");
+    evals("swap-remove-nth 1 {1 2 3}", "{1 3}");
+    evals("swap-remove-nth 2 {1 2 3}", "{1 2}");
+    evals("swap-remove-nth -1 {1 2 3}", "{1 2}");
+    evals("swap-remove-nth -2 {1 2 3}", "{1 3}");
+    evals("swap-remove-nth 0 {1}", "{}");
+    fails("swap-remove-nth 0 {}", "swap-remove-nth", "0 {}");
+    fails("swap-remove-nth 3 {1 2 3}", "swap-remove-nth", "3 {1 2 3}");
+    fails("swap-remove-nth 3 0", "swap-remove-nth", "3 0");
+    fails(
+        "swap-remove-nth {1 2 3} {}",
+        "swap-remove-nth",
+        "{1 2 3} {}",
+    );
+
+    evals("concat {{1 2} {3 4}}", "{1 2 3 4}");
+    evals(
+        "concat {{1 2} {3 4} {5} {{6} {7}} {} {} {8 {9}}}",
+        "{1 2 3 4 5 {6} {7} 8 {9}}",
+    );
+    evals("concat {}", "{}");
+    fails("concat 0", "concat", "0");
+    fails("concat {0 1 2 3}", "concat", "{0 1 2 3}");
+
+    evals("slice 0 3 {1 2 3}", "{1 2 3}");
+    evals("slice 0 2 {1 2 3}", "{1 2}");
+    evals("slice 1 3 {1 2 3}", "{2 3}");
+    evals("slice 2 3 {1 2 3}", "{3}");
+    evals("slice 2 2 {1 2 3}", "{}");
+    evals("slice -2 -1 {1 2 3}", "{2}");
+    evals("slice 0 0 {}", "{}");
+    evals("slice -1 -1 {}", "{}");
+    fails("slice 0 3 {1 2}", "slice", "0 3 {1 2}");
+    fails("slice 4 3 {1 2}", "slice", "4 3 {1 2}");
+    fails("slice 1 1 {}", "slice", "1 1 {}");
+    fails("slice 2 0 {1 2 3}", "slice", "2 0 {1 2 3}");
+    fails("slice {} 0 {1 2 3}", "slice", "{} 0 {1 2 3}");
+    fails("slice 0 {} {1 2 3}", "slice", "0 {} {1 2 3}");
+    fails("slice 0 0 0", "slice", "0 0 0");
+
+    // evals("build-list {1 2 3 4}", "{1 2 3 4}");
+    // evals("build-list {}", "{}");
+    // evals("build-list {+ 1 2  + 2 2  + 3 3}", "{3 4 6}");
+    // evals("define { iota { choose {} {iota} > 0 dup - 1 } } { iota 3 }", "{0 1 2}");
 }

@@ -37,14 +37,14 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("tail", b_tail);
     b.insert("init", b_init);
     b.insert("last", b_last);
-    /*
     b.insert("nth", b_nth);
     b.insert("set-nth", b_set_nth);
-    // b.insert("insert", b_insert);
-    // b.insert("remove-nth", b_remove_nth);
-    // b.insert("swap-remove-nth", b_swap_remove_nth);
-    // b.insert("concat", b_concat);
-    */
+    b.insert("insert-before", b_insert_before);
+    b.insert("remove-nth", b_remove_nth);
+    b.insert("swap-remove-nth", b_swap_remove_nth);
+    b.insert("concat", b_concat);
+    b.insert("slice", b_slice);
+    // b.insert("build-list", b_build_list);
     // Quoting
     b.insert("quote", b_quote);
     b.insert("unquote", b_unquote);
@@ -175,7 +175,7 @@ macro_rules! b_typed {
                         true
                     },
                     xs => {
-                        eprintln!("Type error for `{}`", stringify!($name));
+                        eprintln!("Type error for `{}`", &stringify!($name).replace('_', "-")[2..]);
                         $e.stack.extend(xs.into_iter().rev());
                         false
                     }
@@ -183,6 +183,25 @@ macro_rules! b_typed {
             })
         })+
     };
+}
+
+fn index_helper(i0: i64, vs: &Vals, allow_end: bool) -> Option<usize> {
+    let n = vs.len() as i64;
+    let i = if i0 < 0 {
+        if i0 == -1 && n == 0 && allow_end {
+            0
+        } else {
+            i0 + n
+        }
+    } else {
+        i0
+    };
+
+    if i < 0 || (i >= n) && !(allow_end && i == n) {
+        eprintln!("Index out of bounds: {} but length was {}", i0, vs.len());
+        return None;
+    }
+    Some(i as usize)
 }
 
 b_typed!(
@@ -242,6 +261,87 @@ b_typed!(
             return false
         }
         _ = vs.pop_back();
+        e.stack.push(Val::Quote(vs));
+    }
+
+    b_nth(e, x : Val::Int(mut i0), y : Val::Quote(mut vs)) {
+        let Some(i) = index_helper(i0, &vs, false) else {
+            e.stack.extend([Val::Quote(vs), Val::Int(i0)]);
+            return false
+        };
+        e.stack.push(vs.into_iter().nth(i).unwrap());
+    }
+
+    b_set_nth(e, x : Val::Int(mut i0), y : v, z : Val::Quote(mut vs)) {
+        let Some(i) = index_helper(i0, &vs, false) else {
+            e.stack.extend([Val::Quote(vs), v, Val::Int(i0)]);
+            return false
+        };
+        vs[i] = v;
+        e.stack.push(Val::Quote(vs));
+    }
+
+    b_insert_before(e, x : Val::Int(mut i0), y : v, z : Val::Quote(mut vs)) {
+        let Some(i) = index_helper(i0, &vs, true) else {
+            e.stack.extend([Val::Quote(vs), v, Val::Int(i0)]);
+            return false
+        };
+        vs.insert(i, v);
+        e.stack.push(Val::Quote(vs))
+    }
+
+    b_remove_nth(e, x : Val::Int(mut i0), z : Val::Quote(mut vs)) {
+        let Some(i) = index_helper(i0, &vs, false) else {
+            e.stack.extend([Val::Quote(vs), Val::Int(i0)]);
+            return false
+        };
+        vs.remove(i);
+        e.stack.push(Val::Quote(vs))
+    }
+
+    b_swap_remove_nth(e, x : Val::Int(mut i0), z : Val::Quote(mut vs)) {
+        let Some(i) = index_helper(i0, &vs, false) else {
+            e.stack.extend([Val::Quote(vs), Val::Int(i0)]);
+            return false
+        };
+        vs.swap_remove_back(i);
+        e.stack.push(Val::Quote(vs))
+    }
+
+    b_concat(e, x : Val::Quote(mut vs)) {
+        let Some(size) = vs.iter().try_fold(0, |s, v| {
+            if let Val::Quote(vss) = v {
+                Some(s + vss.len())
+            } else {
+                None
+            }
+        }) else {
+            eprintln!("Type error for `concat`");
+            e.stack.push(Val::Quote(vs));
+            return false
+        };
+        let mut r = Vals::with_capacity(size);
+        r.extend(vs.into_iter().flat_map(|v| {
+            let Val::Quote(vss) = v else {
+                unreachable!();
+            };
+            vss
+        }));
+        e.stack.push(Val::Quote(r));
+    }
+
+    b_slice(e, x : Val::Int(from), y : Val::Int(to), z : Val::Quote(mut vs)) {
+        let (Some(i), Some(j)) = (index_helper(from, &vs, true), index_helper(to, &vs, true)) else {
+            e.stack.extend([Val::Quote(vs), Val::Int(to), Val::Int(from)]);
+            return false
+        };
+        if i > j || (i > 0 && vs.len() == 0) {
+            eprintln!("Invalid slice range");
+            e.stack.extend([Val::Quote(vs), Val::Int(to), Val::Int(from)]);
+            return false
+        }
+        _ = vs.drain(j..);
+        _ = vs.drain(..i);
         e.stack.push(Val::Quote(vs));
     }
 );
