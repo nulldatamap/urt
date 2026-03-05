@@ -45,6 +45,12 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("concat", b_concat);
     b.insert("slice", b_slice);
     // b.insert("build-list", b_build_list);
+    // Types
+    b.insert("type-of", b_type_of);
+    b.insert("int?", b_is_int);
+    b.insert("symbol?", b_is_symbol);
+    b.insert("keyword?", b_is_keyword);
+    b.insert("list?", b_is_list);
     // Quoting
     b.insert("quote", b_quote);
     b.insert("unquote", b_unquote);
@@ -344,6 +350,42 @@ b_typed!(
         _ = vs.drain(..i);
         e.stack.push(Val::Quote(vs));
     }
+);
+
+fn b_type_of(e: &mut Eval) -> bool {
+    e.arity(|e, [x]| {
+        match x {
+            Val::Quote(_) => e.stack.push(Val::Kw("list".to_string())),
+            Val::Int(_) => e.stack.push(Val::Kw("int".to_string())),
+            Val::Sym(_) => e.stack.push(Val::Kw("symbol".to_string())),
+            Val::Kw(_) => e.stack.push(Val::Kw("keyword".to_string())),
+        }
+        true
+    })
+}
+
+macro_rules! b_type_pred {
+    ($($name:ident $ty:pat),+) => (
+        $(
+            fn $name(e: &mut Eval) -> bool {
+                e.arity(|e, [x]| {
+                    if let $ty = x {
+                        e.stack.push(VAL_TRUE)
+                    } else {
+                        e.stack.push(VAL_FALSE)
+                    }
+                    true
+                })
+            }
+        )+
+    );
+}
+
+b_type_pred!(
+    b_is_int Val::Int(_),
+    b_is_symbol Val::Sym(_),
+    b_is_keyword Val::Kw(_),
+    b_is_list Val::Quote(_)
 );
 
 fn b_quote(e: &mut Eval) -> bool {

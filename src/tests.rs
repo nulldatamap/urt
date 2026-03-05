@@ -1,10 +1,10 @@
 #![cfg(test)]
 
-use crate::eval::eval;
+use crate::eval::{eval, trace};
 use crate::parser::parse;
 use crate::val::{Program, Val, Values};
 
-fn evals(program: &'static str, stack: &'static str) {
+fn evals<'a>(program: &'a str, stack: &'a str) {
     let p = parse(program).unwrap();
     let exp = parse(stack).unwrap();
     match eval(p) {
@@ -149,6 +149,34 @@ fn logic() {
     evals("not false", "1");
     evals("not {1}", "0");
     evals("not {}", "1");
+}
+
+#[test]
+fn types() {
+    let groups: &[(&str, &[&str])] = &[
+        ("int", &["0", "1", "-1"]),
+        ("list", &["{}", "{1 2 3}", "{:wow}", "{{}}"]),
+        ("keyword", &[":wow", ":1"]),
+        ("symbol", &["head {x}"]),
+    ];
+
+    for (ty, vals) in groups {
+        for val in vals.iter() {
+            evals(&format!("type-of {}", val), &format!(":{}", ty));
+        }
+    }
+
+    for (ty0, _) in groups {
+        for (ty1, vals) in groups {
+            for val in vals.iter() {
+                evals(&format!("{}? {}", ty0, val), if ty0 == ty1 {
+                    "1"
+                } else {
+                    "0"
+                });
+            }
+        }
+    }
 }
 
 #[test]
