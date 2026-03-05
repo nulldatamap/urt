@@ -47,6 +47,10 @@ where
     I: Iterator<Item = char>,
 {
     let mut buf = String::new();
+    let is_kw = chars.peek() == Some(&':');
+    if is_kw {
+        chars.next();
+    }
 
     while let Some(&ch) = chars.peek() {
         if ch.is_whitespace() || ch == '{' || ch == '}' {
@@ -61,17 +65,21 @@ where
     }
 
     let mut chs = buf.chars();
-    if buf.starts_with('-') && buf.len() > 1 {
-        _ = chs.next();
-    }
-
-    if chs.all(|c| c.is_ascii_digit()) {
-        Ok(Val::Int(buf.parse::<i64>().map_err(|e| {
-            let mut x = e.to_string();
-            x.push_str(&buf);
-            x
-        })?))
+    if is_kw {
+        Ok(Val::Kw(buf))
     } else {
-        Ok(Val::Sym(buf))
+        if buf.starts_with('-') && buf.len() > 1 {
+            _ = chs.next();
+        }
+
+        if chs.all(|c| c.is_ascii_digit()) {
+            Ok(Val::Int(buf.parse::<i64>().map_err(|e| {
+                let mut x = e.to_string();
+                x.push_str(&buf);
+                x
+            })?))
+        } else {
+            Ok(Val::Sym(buf))
+        }
     }
 }

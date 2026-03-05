@@ -5,6 +5,7 @@ use std::fmt;
 pub enum Val {
     Int(i64),
     Sym(String),
+    Kw(String),
     Quote(Vals),
 }
 
@@ -29,6 +30,7 @@ impl fmt::Debug for Val {
         match self {
             Val::Int(i) => write!(f, "{i}"),
             Val::Sym(s) => write!(f, "{s}"),
+            Val::Kw(s) => write!(f, ":{s}"),
             Val::Quote(vals) => {
                 write!(f, "{{")?;
                 let mut first = true;

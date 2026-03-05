@@ -63,6 +63,10 @@ fn basics() {
     evals("-1", "-1");
     evals("{a b c}", "{a b c}");
     evals("{{} {{}} {}}", "{{} {{}} {}}");
+    evals(
+        ":a :wowser :0 ::::cool-stuff?",
+        ":a :wowser :0 ::::cool-stuff?",
+    );
 }
 
 #[test]
