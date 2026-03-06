@@ -390,7 +390,7 @@ b_type_pred!(
 
 fn b_quote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
-        e.stack.push(Val::Quote(VecDeque::from([x])));
+        e.stack.push(Val::Quote(Vals::from([x])));
         true
     })
 }
@@ -491,7 +491,7 @@ fn b_locals(e: &mut Eval) -> bool {
             }
 
             for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-                scope.insert(l.clone(), VecDeque::from([v]));
+                scope.insert(l.clone(), Vals::from([v]));
             }
 
             true

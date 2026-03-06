@@ -36,12 +36,7 @@ pub fn trace(program: Vals) -> Result<Vals, Eval> {
             scope_s.push_str("} ");
             scopes_s.extend(scope_s.drain(..));
         }
-        println!(
-            "{:?} | {:?}\t\t{}",
-            &e.program,
-            Stack(&e.stack),
-            scopes_s
-        )
+        println!("{:?} | {:?}\t\t{}", &e.program, Stack(&e.stack), scopes_s)
     }
     if e.program.is_empty() {
         e.stack.reverse();

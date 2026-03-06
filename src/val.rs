@@ -2,6 +2,7 @@ use bitflag::{Flags, bitflag};
 use std::collections::VecDeque;
 use std::fmt;
 use std::iter::Rev;
+use std::ops::{Index, IndexMut, RangeBounds};
 
 #[derive(PartialEq, Clone)]
 pub enum Val {
@@ -39,7 +40,7 @@ enum ValsFlags {
 }
 
 impl ValsFlags {
-    fn update_under_add_element(self, v : &Val) -> ValsFlags {
+    fn update_under_add_element(self, v: &Val) -> ValsFlags {
         let mut flags = self;
 
         let mut fresh = self.contains(Self::Empty);
@@ -73,7 +74,7 @@ impl Default for ValsFlags {
 macro_rules! mk_iter {
     ($($name:ident $(<$lt:lifetime>)? : ($deque_ty:ty, $elm_ty:ty)),+) => (
         $(
-            enum $name $(<$lt>)? {
+            pub enum $name $(<$lt>)? {
                 Nil,
                 Deque($deque_ty),
             }
@@ -105,7 +106,8 @@ macro_rules! mk_iter {
 mk_iter!(
     Iter<'a> : (std::collections::vec_deque::Iter<'a, Val>, &'a Val),
     IterMut<'a> : (std::collections::vec_deque::IterMut<'a, Val>, &'a mut Val),
-    IntoIter : (std::collections::vec_deque::IntoIter<Val>, Val)
+    IntoIter : (std::collections::vec_deque::IntoIter<Val>, Val),
+    Drain<'a> : (std::collections::vec_deque::Drain<'a, Val>, Val)
 );
 
 #[derive(Clone, PartialEq)]
@@ -136,6 +138,56 @@ impl ValsRepr {
         }
     }
 
+    fn drain<R>(&mut self, r: R) -> Drain
+    where
+        R: RangeBounds<usize>,
+    {
+        match self {
+            ValsRepr::Nil => Drain::Nil,
+            ValsRepr::Deque(vs) => Drain::Deque(vs.drain(r)),
+        }
+    }
+
+    fn insert(&mut self, i: usize, v: Val) {
+        match self {
+            ValsRepr::Nil => {
+                assert_eq!(i, 0);
+                let mut vs = VecDeque::with_capacity(1);
+                vs.push_back(v);
+                *self = ValsRepr::Deque(vs);
+            },
+            ValsRepr::Deque(vs) => vs.insert(i, v),
+        }
+    }
+
+    fn remove(&mut self, i: usize) -> Option<Val> {
+        match self {
+            ValsRepr::Nil => panic!("Tried to remove element from empty Vals!"),
+            ValsRepr::Deque(vs) => vs.remove(i),
+        }
+    }
+
+    fn swap_remove_back(&mut self, i: usize) -> Option<Val> {
+        match self {
+            ValsRepr::Nil => panic!("Tried to remove element from empty Vals!"),
+            ValsRepr::Deque(vs) => vs.swap_remove_back(i),
+        }
+    }
+
+    fn back(&self) -> Option<&Val> {
+        match self {
+            ValsRepr::Nil => None,
+            ValsRepr::Deque(deque) => deque.back(),
+        }
+    }
+
+    fn front(&self) -> Option<&Val> {
+        match self {
+            ValsRepr::Nil => None,
+            ValsRepr::Deque(deque) => deque.front(),
+        }
+    }
+
     fn pop_back(&mut self) -> Option<Val> {
         match self {
             ValsRepr::Nil => None,
@@ -156,7 +208,7 @@ impl ValsRepr {
                 let mut elms = VecDeque::with_capacity(1);
                 elms.push_back(v);
                 *self = ValsRepr::Deque(elms);
-            },
+            }
             ValsRepr::Deque(vs) => {
                 vs.push_back(v);
             }
@@ -169,11 +221,39 @@ impl ValsRepr {
                 let mut elms = VecDeque::with_capacity(1);
                 elms.push_front(v);
                 *self = ValsRepr::Deque(elms);
-            },
+            }
             ValsRepr::Deque(vs) => {
                 vs.push_front(v);
             }
         }
+    }
+
+    fn get(&self, i: usize) -> Option<&Val> {
+        match self {
+            ValsRepr::Nil => None,
+            ValsRepr::Deque(deque) => deque.get(i),
+        }
+    }
+
+    fn get_mut(&mut self, i: usize) -> Option<&mut Val> {
+        match self {
+            ValsRepr::Nil => None,
+            ValsRepr::Deque(deque) => deque.get_mut(i),
+        }
+    }
+}
+
+impl Index<usize> for ValsRepr {
+    type Output = Val;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get(index).expect("Out of bounds access")
+    }
+}
+
+impl IndexMut<usize> for ValsRepr {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.get_mut(index).expect("Out of bounds access")
     }
 }
 
@@ -197,7 +277,17 @@ pub struct Vals {
 
 impl Vals {
     pub const fn empty() -> Self {
-        Vals { flags: ValsFlags::None, repr: ValsRepr::Nil }
+        Vals {
+            flags: ValsFlags::None,
+            repr: ValsRepr::Nil,
+        }
+    }
+
+    pub fn with_capacity(cap: usize) -> Vals {
+        Vals {
+            flags: ValsFlags::Empty,
+            repr: ValsRepr::Deque(VecDeque::with_capacity(cap)),
+        }
     }
 
     pub fn iter(&self) -> Iter {
@@ -206,6 +296,13 @@ impl Vals {
 
     pub fn iter_mut(&mut self) -> IterMut {
         self.repr.iter_mut()
+    }
+
+    pub fn drain<R>(&mut self, r: R) -> Drain
+    where
+        R: RangeBounds<usize>,
+    {
+        self.repr.drain(r)
     }
 
     #[cfg(debug_assertions)]
@@ -248,6 +345,29 @@ impl Vals {
         }
     }
 
+    pub fn insert(&mut self, i: usize, v: Val) {
+        self.flags = self.flags.update_under_add_element(&v);
+        self.repr.insert(i, v);
+    }
+
+    pub fn remove(&mut self, i: usize) {
+        self.repr.remove(i);
+        self.update_after_shrinking();
+    }
+
+    pub fn swap_remove_back(&mut self, i: usize) {
+        self.repr.swap_remove_back(i);
+        self.update_after_shrinking();
+    }
+
+    pub fn back(&self) -> Option<&Val> {
+        self.repr.back()
+    }
+
+    pub fn front(&self) -> Option<&Val> {
+        self.repr.front()
+    }
+
     pub fn push_back(&mut self, v: Val) {
         self.check_invariants();
         self.flags = self.flags.update_under_add_element(&v);
@@ -275,6 +395,20 @@ impl Vals {
     }
 }
 
+impl Index<usize> for Vals {
+    type Output = Val;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.repr.index(index)
+    }
+}
+
+impl IndexMut<usize> for Vals {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.repr.index_mut(index)
+    }
+}
+
 impl IntoIterator for Vals {
     type Item = Val;
     type IntoIter = IntoIter;
@@ -285,7 +419,7 @@ impl IntoIterator for Vals {
 }
 
 impl Extend<Val> for Vals {
-    fn extend<T: IntoIterator<Item=Val>>(&mut self, iter: T) {
+    fn extend<T: IntoIterator<Item = Val>>(&mut self, iter: T) {
         // TODO: Could be specialized
         for v in iter {
             self.push_back(v);
@@ -328,6 +462,31 @@ impl From<Vec<Val>> for Vals {
             r.check_invariants();
             r
         }
+    }
+}
+
+impl<const N: usize> From<[Val; N]> for Vals {
+    fn from(vals: [Val; N]) -> Self {
+        if vals.is_empty() {
+            Vals::empty()
+        } else {
+            let mut flags = ValsFlags::empty();
+            for v in &vals {
+                flags = flags.update_under_add_element(v);
+            }
+            let r = Vals {
+                flags,
+                repr: ValsRepr::Deque(VecDeque::from(vals)),
+            };
+            r.check_invariants();
+            r
+        }
+    }
+}
+
+impl Into<Vec<Val>> for Vals {
+    fn into(self) -> Vec<Val> {
+        self.repr.into_iter().collect()
     }
 }
 

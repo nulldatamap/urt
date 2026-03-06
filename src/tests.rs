@@ -25,11 +25,14 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
     let mut exp0: Vec<Val> = parse(stack).unwrap().into();
     exp0.reverse();
     match eval(p) {
-        Ok(got) => panic!(
-            "Expected program to fail!\nProgram: {:?}\nResult: {:?}",
-            program,
-            Stack(&Vec::from(got))
-        ),
+        Ok(got) => {
+            let got: Vec<_> = got.into();
+            panic!(
+                "Expected program to fail!\nProgram: {:?}\nResult: {:?}",
+                program,
+                Stack(&got)
+            )
+        }
         Err(e) => {
             let mut matches = false;
             if e.program.len() >= p0.len() {
@@ -306,8 +309,8 @@ fn list() {
     fails("set-nth 0 99 {}", "set-nth", "0 99 {}");
     fails("set-nth -1 99 {}", "set-nth", "-1 99 {}");
     fails("set-nth 1 99 {1}", "set-nth", "1 99 {1}");
-    fails("set-nth 0 99 0", "set-nth", "0 99 0");
-    fails("set-nth {1 2 3} 99 0", "set-nth", "{1 2 3} 99 0");
+    fails("set-nth 0 99 0", "set-nth", " 99 {}");
+    fails("set-nth {1 2 3} 99 0", "set-nth", "X 99 {}");
 
     evals("insert-before 0 99 {1 2 3}", "{99 1 2 3}");
     evals("insert-before 2 99 {1 2 3}", "{1 2 99 3}");

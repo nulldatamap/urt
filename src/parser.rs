@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
 use crate::val::*;
+use std::collections::VecDeque;
 
 pub fn parse(input: &str) -> Result<Vals, String> {
     let mut chars = input.chars().peekable();
