@@ -1,6 +1,6 @@
 use crate::eval::Eval;
 use crate::parser::parse;
-use crate::val::{Program, Values};
+use crate::val::Stack;
 
 mod builtins;
 mod eval;
@@ -11,10 +11,10 @@ mod val;
 fn main() {
     let input = "define { two {2} x {3} } { + two 2 }";
     let ast = parse(input).unwrap();
-    println!("{:?} | ", Program(&ast));
+    println!("{:?} | ", &ast);
 
     let mut e = Eval::new(ast);
     while e.step() {
-        println!("{:?} | {:?}", Program(&e.program), Values(&e.stack[..]));
+        println!("{:?} | {:?}", &e.program, Stack(&e.stack[..]));
     }
 }

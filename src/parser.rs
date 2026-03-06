@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use crate::val::*;
 
 pub fn parse(input: &str) -> Result<Vals, String> {
@@ -9,7 +10,7 @@ fn parse_vals<I>(chars: &mut std::iter::Peekable<I>, stop_on_close: bool) -> Res
 where
     I: Iterator<Item = char>,
 {
-    let mut vals = Vals::new();
+    let mut vals = VecDeque::new();
 
     while let Some(&ch) = chars.peek() {
         match ch {
@@ -21,7 +22,7 @@ where
             '}' => {
                 chars.next(); // consume '}'
                 if stop_on_close {
-                    return Ok(vals);
+                    return Ok(vals.into());
                 } else {
                     return Err("unexpected '}'".into());
                 }
@@ -38,7 +39,7 @@ where
     if stop_on_close {
         Err("unclosed '{'".into())
     } else {
-        Ok(vals)
+        Ok(vals.into())
     }
 }
 

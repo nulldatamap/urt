@@ -1,5 +1,5 @@
 use crate::builtins;
-use crate::val::{Program, Val, Vals, Values};
+use crate::val::{Stack, Val, Vals};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -31,15 +31,15 @@ pub fn trace(program: Vals) -> Result<Vals, Eval> {
         for scope in &e.lexicon {
             scope_s.push_str("{ ");
             for kv in scope.iter() {
-                write!(scope_s, "{} {{{:?}}} ", kv.0, Program(&kv.1)).unwrap();
+                write!(scope_s, "{} {{{:?}}} ", kv.0, &kv.1).unwrap();
             }
             scope_s.push_str("} ");
             scopes_s.extend(scope_s.drain(..));
         }
         println!(
             "{:?} | {:?}\t\t{}",
-            Program(&e.program),
-            Values(&e.stack),
+            &e.program,
+            Stack(&e.stack),
             scopes_s
         )
     }

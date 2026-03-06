@@ -2,7 +2,7 @@
 
 use crate::eval::{eval, trace};
 use crate::parser::parse;
-use crate::val::{Program, Val, Values};
+use crate::val::{Stack, Val};
 
 fn evals<'a>(program: &'a str, stack: &'a str) {
     let p = parse(program).unwrap();
@@ -12,8 +12,8 @@ fn evals<'a>(program: &'a str, stack: &'a str) {
         Err(e) => {
             panic!(
                 "Evaluation failed:\n{:?} | {:?}",
-                Program(&e.program),
-                Values(&e.stack)
+                &e.program,
+                Stack(&e.stack)
             );
         }
     }
@@ -28,7 +28,7 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
         Ok(got) => panic!(
             "Expected program to fail!\nProgram: {:?}\nResult: {:?}",
             program,
-            Values(&Vec::from(got))
+            Stack(&Vec::from(got))
         ),
         Err(e) => {
             let mut matches = false;
@@ -47,10 +47,10 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
             assert!(
                 matches,
                 "Unexpected program fail state!\nExpected: {:?} | {:?}\nGot: {:?} | {:?}",
-                Program(&p0),
-                Values(&exp0),
-                Program(&e.program),
-                Values(&e.stack)
+                &p0,
+                Stack(&exp0),
+                &e.program,
+                Stack(&e.stack)
             );
         }
     }
@@ -169,11 +169,10 @@ fn types() {
     for (ty0, _) in groups {
         for (ty1, vals) in groups {
             for val in vals.iter() {
-                evals(&format!("{}? {}", ty0, val), if ty0 == ty1 {
-                    "1"
-                } else {
-                    "0"
-                });
+                evals(
+                    &format!("{}? {}", ty0, val),
+                    if ty0 == ty1 { "1" } else { "0" },
+                );
             }
         }
     }

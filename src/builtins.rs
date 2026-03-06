@@ -1,5 +1,5 @@
 use crate::eval::{Builtin, Eval};
-use crate::val::{Program, VAL_FALSE, VAL_TRUE, Val, Vals};
+use crate::val::{VAL_FALSE, VAL_TRUE, Val, Vals};
 use std::collections::{HashMap, VecDeque};
 
 pub fn builtins() -> HashMap<&'static str, Builtin> {
@@ -504,7 +504,7 @@ fn b_define(e: &mut Eval) -> bool {
         |ds, _e| ds.len() % 2 == 0,
         |ds, scope, _e| {
             if ds.len() % 2 == 1 {
-                eprintln!("Invalid definitions: {{{:?}}}", Program(ds));
+                eprintln!("Invalid definitions: {{{:?}}}", ds);
                 return false;
             };
             for i in 0..(ds.len() / 2) {
