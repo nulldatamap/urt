@@ -346,8 +346,7 @@ b_typed!(
             e.stack.extend([Val::Quote(vs), Val::Int(to), Val::Int(from)]);
             return false
         }
-        _ = vs.drain(j..);
-        _ = vs.drain(..i);
+        vs.slice(i, j);
         e.stack.push(Val::Quote(vs));
     }
 );

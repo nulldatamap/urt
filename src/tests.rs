@@ -309,8 +309,8 @@ fn list() {
     fails("set-nth 0 99 {}", "set-nth", "0 99 {}");
     fails("set-nth -1 99 {}", "set-nth", "-1 99 {}");
     fails("set-nth 1 99 {1}", "set-nth", "1 99 {1}");
-    fails("set-nth 0 99 0", "set-nth", " 99 {}");
-    fails("set-nth {1 2 3} 99 0", "set-nth", "X 99 {}");
+    fails("set-nth 0 99 0", "set-nth", "0 99 0");
+    fails("set-nth {1 2 3} 99 0", "set-nth", "{1 2 3} 99 0");
 
     evals("insert-before 0 99 {1 2 3}", "{99 1 2 3}");
     evals("insert-before 2 99 {1 2 3}", "{1 2 99 3}");

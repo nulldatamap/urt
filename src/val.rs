@@ -269,7 +269,7 @@ impl IntoIterator for ValsRepr {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Vals {
     flags: ValsFlags,
     repr: ValsRepr,
@@ -278,7 +278,7 @@ pub struct Vals {
 impl Vals {
     pub const fn empty() -> Self {
         Vals {
-            flags: ValsFlags::None,
+            flags: ValsFlags::Empty,
             repr: ValsRepr::Nil,
         }
     }
@@ -348,16 +348,19 @@ impl Vals {
     pub fn insert(&mut self, i: usize, v: Val) {
         self.flags = self.flags.update_under_add_element(&v);
         self.repr.insert(i, v);
+        self.check_invariants();
     }
 
     pub fn remove(&mut self, i: usize) {
         self.repr.remove(i);
         self.update_after_shrinking();
+        self.check_invariants();
     }
 
     pub fn swap_remove_back(&mut self, i: usize) {
         self.repr.swap_remove_back(i);
         self.update_after_shrinking();
+        self.check_invariants();
     }
 
     pub fn back(&self) -> Option<&Val> {
@@ -372,18 +375,21 @@ impl Vals {
         self.check_invariants();
         self.flags = self.flags.update_under_add_element(&v);
         self.repr.push_back(v);
+        self.check_invariants();
     }
 
     pub fn push_front(&mut self, v: Val) {
         self.check_invariants();
         self.flags = self.flags.update_under_add_element(&v);
         self.repr.push_front(v);
+        self.check_invariants();
     }
 
     pub fn pop_back(&mut self) -> Option<Val> {
         self.check_invariants();
         let r = self.repr.pop_back();
         self.update_after_shrinking();
+        self.check_invariants();
         r
     }
 
@@ -391,7 +397,29 @@ impl Vals {
         self.check_invariants();
         let r = self.repr.pop_front();
         self.update_after_shrinking();
+        self.check_invariants();
         r
+    }
+
+    pub fn slice(&mut self, from: usize, to: usize) {
+        self.check_invariants();
+        assert!(to <= self.repr.len());
+        assert!(from <= self.repr.len());
+        assert!(from <= to);
+        _ = self.drain(to..);
+        _ = self.drain(..from);
+        self.update_after_shrinking();
+        self.check_invariants();
+    }
+}
+
+impl PartialEq<Self> for Vals {
+    fn eq(&self, other: &Self) -> bool {
+        if self.is_empty() && other.is_empty() {
+            true
+        } else {
+            self.flags == other.flags && self.repr == other.repr
+        }
     }
 }
 
