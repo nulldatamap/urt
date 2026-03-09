@@ -1,0 +1,54 @@
+define {
+  comment { drop }
+  head-tail { head swap tail dup }
+  mod-clamp {
+    locals { x } {
+      choose
+        { + 100 x }
+        { % x 100 }
+        < x 0
+    }
+  }
+  step {
+    locals { acc data } {
+      mod-clamp
+      choose
+        { - acc head-tail }
+        { + acc head-tail }
+        = :L head-tail data
+    }
+  }
+  solve-helper {
+    locals { zeroes acc data } {
+      choose
+        { locals { new-acc new-data }
+          { solve-helper
+              choose
+                { + 1 zeroes }
+                { zeroes }
+                = 0 new-acc
+              new-acc
+              new-data }
+          step acc data }
+        { zeroes }
+        data
+    }
+  }
+  solve { solve-helper 0 50 }
+}
+{
+  comment { There's no strings right now, so we'll just use this data format for now: }
+  solve
+  {
+  :L 68
+  :L 30
+  :R 48
+  :L 5
+  :R 60
+  :L 55
+  :L 1
+  :L 99
+  :R 14
+  :L 82
+  }
+}

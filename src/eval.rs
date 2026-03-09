@@ -94,7 +94,7 @@ impl Eval {
             if let Some(f) = self.builtins.get(x) {
                 f(self)
             } else {
-                eprintln!("Unknown symbol: {}", x);
+                eprintln!("Unknown symbol: `{}`", x);
                 false
             }
         }
