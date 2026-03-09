@@ -1,5 +1,5 @@
 use crate::eval::{Builtin, Eval};
-use crate::val::{VAL_FALSE, VAL_TRUE, Val, Vals};
+use crate::val::{VAL_FALSE, VAL_TRUE, Val, Vals, ValRef};
 use std::collections::{HashMap, VecDeque};
 
 pub fn builtins() -> HashMap<&'static str, Builtin> {
@@ -216,7 +216,7 @@ b_typed!(
     }
 
     b_append(e, x : Val::Quote(mut ls), y : Val::Quote(mut rs)) {
-        ls.extend(rs.drain(..));
+        ls.append(rs);
         e.stack.push(Val::Quote(ls));
     }
 
@@ -507,8 +507,8 @@ fn b_define(e: &mut Eval) -> bool {
                 return false;
             };
             for i in 0..(ds.len() / 2) {
-                let kv = [&ds[i * 2], &ds[i * 2 + 1]];
-                let [Val::Sym(k), Val::Quote(v)] = kv else {
+                let kv = [&ds.get(i * 2), &ds.get(i * 2 + 1)];
+                let [ValRef::Sym(k), ValRef::Quote(v)] = kv else {
                     eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
                     return false;
                 };

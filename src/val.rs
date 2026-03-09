@@ -1,8 +1,7 @@
 use bitflag::{Flags, bitflag};
 use std::collections::VecDeque;
 use std::fmt;
-use std::iter::Rev;
-use std::ops::{Index, IndexMut, RangeBounds};
+use std::ops::{Index, RangeBounds};
 
 #[derive(PartialEq, Clone)]
 pub enum Val {
@@ -17,13 +16,38 @@ pub const VAL_FALSE: Val = Val::Int(0);
 pub const VAL_EMPTY: Val = Val::Quote(Vals::empty());
 
 impl Val {
-    pub(crate) fn is_truthy(&self) -> bool {
+    pub fn is_truthy(&self) -> bool {
         match self {
             Val::Int(x) => *x != 0,
             Val::Quote(x) => x.len() != 0,
             _ => true,
         }
     }
+
+    pub fn i64(&self) -> Option<i64> {
+        if let Self::Int(x) = self {
+            Some(*x)
+        } else {
+            None
+        }
+    }
+
+    pub fn to_val_ref(&self) -> ValRef {
+        match self {
+            Val::Int(x) => ValRef::Int(*x),
+            Val::Sym(x) => ValRef::Sym(&*x),
+            Val::Kw(x) => ValRef::Kw(&*x),
+            Val::Quote(x) => ValRef::Quote(x),
+        }
+    }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum ValRef<'a> {
+    Int(i64),
+    Sym(&'a str),
+    Kw(&'a str),
+    Quote(&'a Vals),
 }
 
 #[bitflag(u8)]
@@ -31,35 +55,27 @@ impl Val {
 enum ValsFlags {
     None = 0,
     Empty = 1 << 0,
-    // Sorted = 1 << 1,
-    // OnlyBits = 1 << 2,
-    // OnlyBytes = 1 << 3,
-    // OnlyInts = 1 << 4,
-    // SetLike = 1 << 5,
-    // MapLike = 1 << 6,
+    OnlyBytes = 1 << 1,
 }
 
 impl ValsFlags {
     fn update_under_add_element(self, v: &Val) -> ValsFlags {
         let mut flags = self;
 
-        let mut fresh = self.contains(Self::Empty);
+        let fresh = self.contains(Self::Empty);
 
         // Can't be empty if we're adding an element
         flags.unset(ValsFlags::Empty);
 
-        /*
-        // Look for possible element invariants:
-        if fresh || base.contains(Self::OnlyBits) {
-            // TODO:
+        if fresh || flags.contains(Self::OnlyBytes) {
+            if let Val::Int(x) = v
+                && u8::try_from(*x).is_ok()
+            {
+                flags.set(Self::OnlyBytes);
+            } else {
+                flags.unset(Self::OnlyBytes);
+            }
         }
-        if fresh || base.contains(Self::OnlyBytes) {
-            // TODO:
-        }
-        if fresh || base.contains(Self::OnlyInts) {
-            // TODO:
-        }
-        */
 
         flags
     }
@@ -71,80 +87,44 @@ impl Default for ValsFlags {
     }
 }
 
-macro_rules! mk_iter {
-    ($($name:ident $(<$lt:lifetime>)? : ($deque_ty:ty, $elm_ty:ty)),+) => (
-        $(
-            pub enum $name $(<$lt>)? {
-                Nil,
-                Deque($deque_ty),
-            }
-
-            impl $(<$lt>)? Iterator for $name<$($lt)?> {
-                type Item = $elm_ty;
-
-                fn next(&mut self) -> Option<Self::Item> {
-                    match self {
-                        $name::Nil => None,
-                        $name::Deque(iter) => iter.next(),
-                    }
-                }
-            }
-
-            impl$(<$lt>)? DoubleEndedIterator for $name$(<$lt>)? {
-                fn next_back(&mut self) -> Option<Self::Item> {
-                    match self {
-                        $name::Nil => None,
-                        $name::Deque(iter) => iter.next_back(),
-                    }
-                }
-            }
-
-        )+
-    );
+#[derive(Clone)]
+pub enum ValsIter<'a> {
+    Nil,
+    Deque(std::collections::vec_deque::Iter<'a, Val>),
+    Bytes(std::slice::Iter<'a, u8>),
 }
-
-mk_iter!(
-    Iter<'a> : (std::collections::vec_deque::Iter<'a, Val>, &'a Val),
-    IterMut<'a> : (std::collections::vec_deque::IterMut<'a, Val>, &'a mut Val),
-    IntoIter : (std::collections::vec_deque::IntoIter<Val>, Val),
-    Drain<'a> : (std::collections::vec_deque::Drain<'a, Val>, Val)
-);
 
 #[derive(Clone, PartialEq)]
 enum ValsRepr {
     Nil,
     Deque(VecDeque<Val>),
+    Bytes(Vec<u8>),
 }
 
 impl ValsRepr {
+    fn is_all_bytes(&self) -> bool {
+        match self {
+            Self::Nil => true,
+            Self::Deque(vs) => vs
+                .iter()
+                .all(|v| v.i64().map_or(false, |i| u8::try_from(i).is_ok())),
+            Self::Bytes(_) => true,
+        }
+    }
+
     fn len(&self) -> usize {
         match &self {
             ValsRepr::Nil => 0,
-            ValsRepr::Deque(deque) => deque.len(),
+            ValsRepr::Deque(vs) => vs.len(),
+            ValsRepr::Bytes(bs) => bs.len(),
         }
     }
 
-    fn iter(&self) -> Iter {
+    fn vals(&self) -> ValsIter {
         match self {
-            ValsRepr::Nil => Iter::Nil,
-            ValsRepr::Deque(vs) => Iter::Deque(vs.iter()),
-        }
-    }
-
-    fn iter_mut(&mut self) -> IterMut {
-        match self {
-            ValsRepr::Nil => IterMut::Nil,
-            ValsRepr::Deque(vs) => IterMut::Deque(vs.iter_mut()),
-        }
-    }
-
-    fn drain<R>(&mut self, r: R) -> Drain
-    where
-        R: RangeBounds<usize>,
-    {
-        match self {
-            ValsRepr::Nil => Drain::Nil,
-            ValsRepr::Deque(vs) => Drain::Deque(vs.drain(r)),
+            ValsRepr::Nil => ValsIter::Nil,
+            ValsRepr::Deque(vs) => ValsIter::Deque(vs.iter()),
+            ValsRepr::Bytes(bs) => ValsIter::Bytes(bs.iter()),
         }
     }
 
@@ -155,8 +135,45 @@ impl ValsRepr {
                 let mut vs = VecDeque::with_capacity(1);
                 vs.push_back(v);
                 *self = ValsRepr::Deque(vs);
-            },
+            }
             ValsRepr::Deque(vs) => vs.insert(i, v),
+        }
+    }
+
+    // Promotion rules:
+    // - If both were unspecialized before, keep them like that
+    // - If it was decided that specialization invariants were kept and one of them are specialized then specialize
+    // - Otherwise despecialize fully
+    fn append(&mut self, flags: ValsFlags, mut other: ValsRepr)  {
+        match (self, other) {
+            (ValsRepr::Nil, ValsRepr::Nil) if flags.contains(ValsFlags::Empty) => {},
+            (_, ValsRepr::Nil) => {},
+            (ValsRepr::Nil, o) => *self = o,
+            (ValsRepr::Deque(ls), ValsRepr::Deque(mut rs)) => {
+                ls.append(&mut rs);
+            },
+            (ValsRepr::Bytes(ls), ValsRepr::Bytes(mut rs)) => {
+                assert!(flags.contains(ValsFlags::OnlyBytes));
+                ls.append(&mut rs);
+            },
+            (_, mut other) if flags.contains(ValsFlags::OnlyBytes) => {
+                let (swap, vs, mut bs) = match (self, other) {
+                    (ValsRepr::Deque(vs), ValsRepr::Bytes(bs)) => (false, vs, bs),
+                    (ValsRepr::Bytes(bs), ValsRepr::Deque(vs)) => (true, vs, bs),
+                    _ => unreachable!(),
+                };
+
+                for v in vs {
+                    bs.push(v.i64().and_then(|x| u8::try_from(x).ok()).expect("Value was promised to be a byte"));
+                }
+                if swap {
+                    self = ValsRepr::Bytes(bs);
+                }
+            },
+            (_, mut other) if flags == ValsFlags::None => {
+
+            },
+            (_, other) => panic!("`append` invalid repr/flag permutation:\n\tFlags: {:?}\n\tLeft: {:?}\n\tRight: {:?}", flags, self, other),
         }
     }
 
@@ -228,44 +245,16 @@ impl ValsRepr {
         }
     }
 
-    fn get(&self, i: usize) -> Option<&Val> {
+    fn try_get(&self, i: usize) -> Option<ValRef> {
         match self {
             ValsRepr::Nil => None,
-            ValsRepr::Deque(deque) => deque.get(i),
+            ValsRepr::Deque(vs) => vs.get(i).map(|x| x.to_val_ref()),
+            ValsRepr::Bytes(bs) => bs.get(i).map(|b| ValRef::Int(*b as i64)),
         }
     }
 
-    fn get_mut(&mut self, i: usize) -> Option<&mut Val> {
-        match self {
-            ValsRepr::Nil => None,
-            ValsRepr::Deque(deque) => deque.get_mut(i),
-        }
-    }
-}
-
-impl Index<usize> for ValsRepr {
-    type Output = Val;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        self.get(index).expect("Out of bounds access")
-    }
-}
-
-impl IndexMut<usize> for ValsRepr {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.get_mut(index).expect("Out of bounds access")
-    }
-}
-
-impl IntoIterator for ValsRepr {
-    type Item = Val;
-    type IntoIter = IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self {
-            ValsRepr::Nil => IntoIter::Nil,
-            ValsRepr::Deque(deque) => IntoIter::Deque(deque.into_iter()),
-        }
+    fn get(&self, i: usize) -> ValRef {
+        self.try_get(i).expect("Out of bounds access")
     }
 }
 
@@ -290,19 +279,8 @@ impl Vals {
         }
     }
 
-    pub fn iter(&self) -> Iter {
-        self.repr.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> IterMut {
-        self.repr.iter_mut()
-    }
-
-    pub fn drain<R>(&mut self, r: R) -> Drain
-    where
-        R: RangeBounds<usize>,
-    {
-        self.repr.drain(r)
+    pub fn vals(&self) -> ValsIter {
+        self.repr.vals()
     }
 
     #[cfg(debug_assertions)]
@@ -318,15 +296,23 @@ impl Vals {
             "Invalid invariant for `{:?}`:\n\tempty flag: {}\n\tBut is_empty(): {}",
             self, is_empty_flags, is_empty
         );
+
+        if self.flags.contains(ValsFlags::OnlyBytes) {
+            assert!(self.repr.is_all_bytes());
+        }
     }
 
-    fn update_after_shrinking(&mut self) {
+    fn update_flags_after_shrinking(&mut self) {
         if self.repr.len() == 0 {
             // Maybe don't throw away the memory just yet?
             // *self = Vals::empty();
             self.flags.set(ValsFlags::Empty);
         }
         self.check_invariants();
+    }
+
+    fn update_flags_after_add(&mut self, v: &Val) {
+        self.flags = self.flags.update_under_add_element(v);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -345,21 +331,31 @@ impl Vals {
         }
     }
 
+    pub fn try_get(&self, i: usize) -> Option<ValRef> {
+        self.repr.try_get(i)
+    }
+
+    pub fn get(&self, i: usize) -> ValRef {
+        self.repr.try_get(i).expect("Out of bounds access")
+    }
+
     pub fn insert(&mut self, i: usize, v: Val) {
-        self.flags = self.flags.update_under_add_element(&v);
+        self.check_invariants();
+
+        self.update_flags_after_add(&v);
         self.repr.insert(i, v);
         self.check_invariants();
     }
 
     pub fn remove(&mut self, i: usize) {
         self.repr.remove(i);
-        self.update_after_shrinking();
+        self.update_flags_after_shrinking();
         self.check_invariants();
     }
 
     pub fn swap_remove_back(&mut self, i: usize) {
         self.repr.swap_remove_back(i);
-        self.update_after_shrinking();
+        self.update_flags_after_shrinking();
         self.check_invariants();
     }
 
@@ -373,14 +369,14 @@ impl Vals {
 
     pub fn push_back(&mut self, v: Val) {
         self.check_invariants();
-        self.flags = self.flags.update_under_add_element(&v);
+        self.update_flags_after_add(&v);
         self.repr.push_back(v);
         self.check_invariants();
     }
 
     pub fn push_front(&mut self, v: Val) {
         self.check_invariants();
-        self.flags = self.flags.update_under_add_element(&v);
+        self.update_flags_after_add(v);
         self.repr.push_front(v);
         self.check_invariants();
     }
@@ -388,7 +384,7 @@ impl Vals {
     pub fn pop_back(&mut self) -> Option<Val> {
         self.check_invariants();
         let r = self.repr.pop_back();
-        self.update_after_shrinking();
+        self.update_flags_after_shrinking();
         self.check_invariants();
         r
     }
@@ -396,7 +392,7 @@ impl Vals {
     pub fn pop_front(&mut self) -> Option<Val> {
         self.check_invariants();
         let r = self.repr.pop_front();
-        self.update_after_shrinking();
+        self.update_flags_after_shrinking();
         self.check_invariants();
         r
     }
@@ -408,7 +404,7 @@ impl Vals {
         assert!(from <= to);
         _ = self.drain(to..);
         _ = self.drain(..from);
-        self.update_after_shrinking();
+        self.update_flags_after_shrinking();
         self.check_invariants();
     }
 }
@@ -423,6 +419,7 @@ impl PartialEq<Self> for Vals {
     }
 }
 
+/*
 impl Index<usize> for Vals {
     type Output = Val;
 
@@ -437,15 +434,6 @@ impl IndexMut<usize> for Vals {
     }
 }
 
-impl IntoIterator for Vals {
-    type Item = Val;
-    type IntoIter = IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.repr.into_iter()
-    }
-}
-
 impl Extend<Val> for Vals {
     fn extend<T: IntoIterator<Item = Val>>(&mut self, iter: T) {
         // TODO: Could be specialized
@@ -454,6 +442,7 @@ impl Extend<Val> for Vals {
         }
     }
 }
+ */
 
 impl From<VecDeque<Val>> for Vals {
     fn from(vals: VecDeque<Val>) -> Self {
