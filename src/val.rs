@@ -52,8 +52,12 @@ pub struct Values<'a>(pub &'a [Val]);
 
 impl<'a> fmt::Debug for Program<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let start = self.0.iter().rposition(|x| matches!(x, Val::Sym(k) if k == "%{leave-scope}")).map(|x| x + 1).unwrap_or(0);
         let mut first = true;
-        for v in self.0 {
+        if start > 0 {
+            write!(f, "... ")?;
+        }
+        for v in self.0.iter().skip(start) {
             if !first {
                 write!(f, " ")?;
             }
