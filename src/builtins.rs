@@ -1,67 +1,70 @@
 use crate::eval::{Builtin, Eval};
-use crate::val::{Program, VAL_FALSE, VAL_TRUE, Val, Vals};
+use crate::val::{Program, VAL_FALSE, VAL_TRUE, Val, Vals, SymbolTable, Sym, LIST_SYM, KEYWORD_SYM, SYMBOL_SYM, INT_SYM, LEAVE_SCOPE_SYM};
 use std::collections::{HashMap, VecDeque};
 
-pub fn builtins() -> HashMap<&'static str, Builtin> {
-    let mut b = HashMap::<&'static str, Builtin>::new();
+pub fn builtins(t: &mut SymbolTable) -> HashMap<Sym, Builtin> {
+    let mut b = HashMap::<Sym, Builtin>::new();
+    let mut reg = |k: &'static str, f| {
+        b.insert(t.intern(k.to_string()), f);
+    };
 
     // Stack
-    b.insert("drop", b_drop);
-    b.insert("dup", b_dup);
-    b.insert("swap", b_swap);
+    reg("drop", b_drop);
+    reg("dup", b_dup);
+    reg("swap", b_swap);
     // Arithmetic
-    b.insert("+", b_add);
-    b.insert("-", b_sub);
-    b.insert("*", b_mul);
-    b.insert("/", b_div);
-    b.insert("%", b_mod);
+    reg("+", b_add);
+    reg("-", b_sub);
+    reg("*", b_mul);
+    reg("/", b_div);
+    reg("%", b_mod);
     // Comparison
-    b.insert("=", b_eq);
-    b.insert("<>", b_neq);
-    b.insert("<", b_le);
-    b.insert("<=", b_leq);
-    b.insert(">", b_ge);
-    b.insert(">=", b_geq);
+    reg("=", b_eq);
+    reg("<>", b_neq);
+    reg("<", b_le);
+    reg("<=", b_leq);
+    reg(">", b_ge);
+    reg(">=", b_geq);
     // Logic
-    b.insert("true", b_true);
-    b.insert("false", b_false);
-    b.insert("&&", b_and);
-    b.insert("||", b_or);
-    b.insert("not", b_not);
+    reg("true", b_true);
+    reg("false", b_false);
+    reg("&&", b_and);
+    reg("||", b_or);
+    reg("not", b_not);
     // Data structure:
-    b.insert("length", b_length);
-    b.insert("append", b_append);
-    b.insert("push-back", b_push_back);
-    b.insert("push-front", b_push_front);
-    b.insert("head", b_head);
-    b.insert("tail", b_tail);
-    b.insert("init", b_init);
-    b.insert("last", b_last);
-    b.insert("head-tail", b_head_tail);
-    b.insert("last-init", b_last_init);
-    b.insert("nth", b_nth);
-    b.insert("set-nth", b_set_nth);
-    b.insert("insert-before", b_insert_before);
-    b.insert("remove-nth", b_remove_nth);
-    b.insert("swap-remove-nth", b_swap_remove_nth);
-    b.insert("concat", b_concat);
-    b.insert("slice", b_slice);
-    // b.insert("build-list", b_build_list);
+    reg("length", b_length);
+    reg("append", b_append);
+    reg("push-back", b_push_back);
+    reg("push-front", b_push_front);
+    reg("head", b_head);
+    reg("tail", b_tail);
+    reg("init", b_init);
+    reg("last", b_last);
+    reg("head-tail", b_head_tail);
+    reg("last-init", b_last_init);
+    reg("nth", b_nth);
+    reg("set-nth", b_set_nth);
+    reg("insert-before", b_insert_before);
+    reg("remove-nth", b_remove_nth);
+    reg("swap-remove-nth", b_swap_remove_nth);
+    reg("concat", b_concat);
+    reg("slice", b_slice);
+    // reg("build-list", b_build_list);
     // Types
-    b.insert("type-of", b_type_of);
-    b.insert("int?", b_is_int);
-    b.insert("symbol?", b_is_symbol);
-    b.insert("keyword?", b_is_keyword);
-    b.insert("list?", b_is_list);
+    reg("type-of", b_type_of);
+    reg("int?", b_is_int);
+    reg("symbol?", b_is_symbol);
+    reg("keyword?", b_is_keyword);
+    reg("list?", b_is_list);
     // Quoting
-    b.insert("quote", b_quote);
-    b.insert("unquote", b_unquote);
+    reg("quote", b_quote);
+    reg("unquote", b_unquote);
     // Control flow
-    b.insert("choose", b_choose);
+    reg("choose", b_choose);
     // Scope
-    b.insert("%{leave-scope}", b_leave_scope);
-    b.insert("locals", b_locals);
-    b.insert("define", b_define);
+    reg("%{leave-scope}", b_leave_scope);
+    reg("locals", b_locals);
+    reg("define", b_define);
 
     b
 }
@@ -380,10 +383,10 @@ b_typed!(
 fn b_type_of(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
         match x {
-            Val::Quote(_) => e.stack.push(Val::Kw("list".to_string())),
-            Val::Int(_) => e.stack.push(Val::Kw("int".to_string())),
-            Val::Sym(_) => e.stack.push(Val::Kw("symbol".to_string())),
-            Val::Kw(_) => e.stack.push(Val::Kw("keyword".to_string())),
+            Val::Quote(_) => e.stack.push(Val::Kw(LIST_SYM)),
+            Val::Int(_) => e.stack.push(Val::Kw(INT_SYM)),
+            Val::Sym(_) => e.stack.push(Val::Kw(SYMBOL_SYM)),
+            Val::Kw(_) => e.stack.push(Val::Kw(KEYWORD_SYM)),
         }
         true
     })
@@ -456,7 +459,7 @@ fn b_leave_scope(e: &mut Eval) -> bool {
 fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
 where
     F: FnOnce(&Vals, &Eval) -> bool,
-    G: FnOnce(&Vals, &mut HashMap<String, Vals>, &mut Eval) -> bool,
+    G: FnOnce(&Vals, &mut HashMap<Sym, Vals>, &mut Eval) -> bool,
 {
     e.arity(|e, [x, y]| {
         'fail: loop {
@@ -470,7 +473,7 @@ where
                 // Since there's no residual program between the active scope and the parent scope
                 // We can safely just merge the two scopes at scope introduction time and then elide
                 // the %{leave-scope}. This even works for non-identical scopes!
-                let in_tail_pos = e.program.back() == Some(&Val::Sym("%{leave-scope}".to_string()));
+                let in_tail_pos = e.program.back() == Some(&Val::Sym(LEAVE_SCOPE_SYM));
                 let mut scope = if in_tail_pos {
                     let Some(s) = e.lexicon.pop() else {
                         eprintln!("Invalid scope!");
@@ -486,7 +489,7 @@ where
 
                 e.lexicon.push(scope);
                 if !in_tail_pos {
-                    e.program.push_back(Val::Sym("%{leave-scope}".to_string()));
+                    e.program.push_back(Val::Sym(LEAVE_SCOPE_SYM));
                 }
                 e.program.extend(v.clone());
 
@@ -516,7 +519,7 @@ fn b_locals(e: &mut Eval) -> bool {
             }
 
             for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-                scope.insert(l.clone(), VecDeque::from([v]));
+                scope.insert(*l, VecDeque::from([v]));
             }
 
             true
@@ -538,7 +541,7 @@ fn b_define(e: &mut Eval) -> bool {
                     eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
                     return false;
                 };
-                scope.insert(k.clone(), v.clone());
+                scope.insert(*k, v.clone());
             }
             true
         },

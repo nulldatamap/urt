@@ -1,11 +1,11 @@
 use crate::val::*;
 
-pub fn parse(input: &str) -> Result<Vals, String> {
+pub fn parse(input: &str, t: &mut SymbolTable) -> Result<Vals, String> {
     let mut chars = input.chars().peekable();
-    parse_vals(&mut chars, false)
+    parse_vals(&mut chars, t, false)
 }
 
-fn parse_vals<I>(chars: &mut std::iter::Peekable<I>, stop_on_close: bool) -> Result<Vals, String>
+fn parse_vals<I>(chars: &mut std::iter::Peekable<I>, t : &mut SymbolTable, stop_on_close: bool) -> Result<Vals, String>
 where
     I: Iterator<Item = char>,
 {
@@ -15,7 +15,7 @@ where
         match ch {
             '{' => {
                 chars.next(); // consume '{'
-                let inner = parse_vals(chars, true)?;
+                let inner = parse_vals(chars, t, true)?;
                 vals.push_back(Val::Quote(inner));
             }
             '}' => {
@@ -30,7 +30,7 @@ where
                 chars.next(); // skip whitespace
             }
             _ => {
-                vals.push_back(parse_atom(chars)?);
+                vals.push_back(parse_atom(chars, t)?);
             }
         }
     }
@@ -42,7 +42,7 @@ where
     }
 }
 
-fn parse_atom<I>(chars: &mut std::iter::Peekable<I>) -> Result<Val, String>
+fn parse_atom<I>(chars: &mut std::iter::Peekable<I>, t: &mut SymbolTable) -> Result<Val, String>
 where
     I: Iterator<Item = char>,
 {
@@ -66,7 +66,7 @@ where
 
     let mut chs = buf.chars();
     if is_kw {
-        Ok(Val::Kw(buf))
+        Ok(Val::Kw(t.intern(buf)))
     } else {
         if buf.starts_with('-') && buf.len() > 1 {
             _ = chs.next();
@@ -79,7 +79,7 @@ where
                 x
             })?))
         } else {
-            Ok(Val::Sym(buf))
+            Ok(Val::Sym(t.intern(buf)))
         }
     }
 }

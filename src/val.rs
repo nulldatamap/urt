@@ -1,11 +1,56 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::collections::hash_map::Entry;
 use std::fmt;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct Sym(u64);
+pub const LEAVE_SCOPE_SYM: Sym = Sym(1);
+pub const INT_SYM: Sym = Sym(2);
+pub const LIST_SYM: Sym = Sym(3);
+pub const SYMBOL_SYM: Sym = Sym(4);
+pub const KEYWORD_SYM: Sym = Sym(5);
+
+pub struct SymbolTable {
+    next: u64,
+    symbols: HashMap<String, Sym>,
+}
+
+impl SymbolTable {
+    pub fn new() -> Self {
+        let mut t = SymbolTable {
+            next: 1,
+            symbols: HashMap::new(),
+        };
+        assert_eq!(t.intern("%{leave-scope}".to_string()), LEAVE_SCOPE_SYM);
+        assert_eq!(t.intern("int".to_string()), INT_SYM);
+        assert_eq!(t.intern("list".to_string()), LIST_SYM);
+        assert_eq!(t.intern("symbol".to_string()), SYMBOL_SYM);
+        assert_eq!(t.intern("keyword".to_string()), KEYWORD_SYM);
+        t
+    }
+
+    pub fn intern(&mut self, x: String) -> Sym {
+        match self.symbols.entry(x) {
+            Entry::Occupied(e) => *e.get(),
+            Entry::Vacant(e) => {
+                let id = Sym(self.next);
+                self.next += 1;
+                e.insert(id);
+                id
+            }
+        }
+    }
+
+    pub fn str(&self, x: Sym) -> &str {
+        self.symbols.iter().find(|kv| *kv.1 == x).expect("Invalid intern string").0
+    }
+}
 
 #[derive(PartialEq, Clone)]
 pub enum Val {
     Int(i64),
-    Sym(String),
-    Kw(String),
+    Sym(Sym),
+    Kw(Sym),
     Quote(Vals),
 }
 
@@ -29,8 +74,8 @@ impl fmt::Debug for Val {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Val::Int(i) => write!(f, "{i}"),
-            Val::Sym(s) => write!(f, "{s}"),
-            Val::Kw(s) => write!(f, ":{s}"),
+            Val::Sym(s) => write!(f, "{s:?}"),
+            Val::Kw(s) => write!(f, ":{s:?}"),
             Val::Quote(vals) => {
                 write!(f, "{{")?;
                 let mut first = true;
@@ -55,7 +100,7 @@ impl<'a> fmt::Debug for Program<'a> {
         let start = self
             .0
             .iter()
-            .rposition(|x| matches!(x, Val::Sym(k) if k == "%{leave-scope}"))
+            .rposition(|x| matches!(x, Val::Sym(k) if *k == LEAVE_SCOPE_SYM))
             .map(|x| x + 1)
             .unwrap_or(0);
         let mut first = true;

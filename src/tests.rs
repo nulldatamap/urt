@@ -2,12 +2,13 @@
 
 use crate::eval::{eval, trace};
 use crate::parser::parse;
-use crate::val::{Program, Val, Values};
+use crate::val::{Program, SymbolTable, Val, Values};
 
 fn evals<'a>(program: &'a str, stack: &'a str) {
-    let p = parse(program).unwrap();
-    let exp = parse(stack).unwrap();
-    match eval(p) {
+    let mut t = SymbolTable::new();
+    let p = parse(program, &mut t).unwrap();
+    let exp = parse(stack, &mut t).unwrap();
+    match eval(p, t) {
         Ok(got) => assert_eq!(got, exp, "evaluating: {}", program),
         Err(e) => {
             panic!(
@@ -20,11 +21,12 @@ fn evals<'a>(program: &'a str, stack: &'a str) {
 }
 
 fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
-    let p = parse(program).unwrap();
-    let p0 = parse(fail_tail).unwrap();
-    let mut exp0: Vec<Val> = parse(stack).unwrap().into();
+    let mut t = SymbolTable::new();
+    let p = parse(program, &mut t).unwrap();
+    let p0 = parse(fail_tail, &mut t).unwrap();
+    let mut exp0: Vec<Val> = parse(stack, &mut t).unwrap().into();
     exp0.reverse();
-    match eval(p) {
+    match eval(p, t) {
         Ok(got) => panic!(
             "Expected program to fail!\nProgram: {:?}\nResult: {:?}",
             program,
