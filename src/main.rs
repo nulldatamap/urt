@@ -1,8 +1,6 @@
-use std::collections::VecDeque;
-use std::fs::File;
 use crate::eval::Eval;
 use crate::parser::parse;
-use crate::val::{Program, Val, Vals, Values};
+use crate::val::{Vals, Values};
 
 mod builtins;
 mod eval;
@@ -21,6 +19,7 @@ fn main() {
 
     let mut e = Eval::new(program);
     while e.step() {
-        println!("{:?} | {:?}", Program(&e.program), Values(&e.stack[..]));
+        // println!("{:?} | {:?}", Program(&e.program), Values(&e.stack[..]));
     }
+    println!("{:?}", Values(&e.stack[..]));
 }
