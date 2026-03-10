@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt;
+use crate::eval::ValOrRef;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Sym(u64);
@@ -93,7 +94,7 @@ impl fmt::Debug for Val {
 }
 
 pub struct Program<'a>(pub &'a Vals);
-pub struct Values<'a>(pub &'a [Val]);
+pub struct Values<'a>(pub &'a [ValOrRef]);
 
 impl<'a> fmt::Debug for Program<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

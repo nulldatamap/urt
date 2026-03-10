@@ -1,4 +1,4 @@
-use crate::eval::{Builtin, Eval};
+use crate::eval::{Builtin, Eval, Ref, ValOrRef};
 use crate::val::{Program, VAL_FALSE, VAL_TRUE, Val, Vals, SymbolTable, Sym, LIST_SYM, KEYWORD_SYM, SYMBOL_SYM, INT_SYM, LEAVE_SCOPE_SYM};
 use std::collections::{HashMap, VecDeque};
 
@@ -90,12 +90,16 @@ macro_rules! b_arith {
     ($name:ident, $op:tt) => {
         fn $name(e: &mut Eval) -> bool {
             e.arity(|e, [x, y]| {
-                let [Val::Int(l), Val::Int(r)] = [&x, &y] else {
-                    e.stack.extend([y, x]);
-                    return false
-                };
-                e.stack.push(Val::Int(l $op r));
-                true
+                match (x, y) {
+                    (ValOrRef::Val(Val::Int(l)), ValOrRef::Val(Val::Int(r))) => {
+                        e.push(Val::Int(l $op r));
+                        true
+                    },
+                    (x, y) => {
+                        e.stack.extend([y, x]);
+                        return false
+                    }
+                }
             })
         }
     };
@@ -109,14 +113,14 @@ b_arith!(b_mod, %);
 
 fn b_eq(e: &mut Eval) -> bool {
     e.arity(|e, [x, y]| {
-        e.stack.push(if x == y { VAL_TRUE } else { VAL_FALSE });
+        e.push(if x == y { VAL_TRUE } else { VAL_FALSE });
         true
     })
 }
 
 fn b_neq(e: &mut Eval) -> bool {
     e.arity(|e, [x, y]| {
-        e.stack.push(if x != y { VAL_TRUE } else { VAL_FALSE });
+        e.push(if x != y { VAL_TRUE } else { VAL_FALSE });
         true
     })
 }
@@ -125,16 +129,20 @@ macro_rules! b_cmp {
     ($name:ident, $op:tt) => {
         fn $name(e: &mut Eval) -> bool {
             e.arity(|e, [x, y]| {
-                let [Val::Int(l), Val::Int(r)] = [&x, &y] else {
-                    e.stack.extend([y, x]);
-                    return false
-                };
-                e.stack.push(if l $op r {
-                    VAL_TRUE
-                } else {
-                    VAL_FALSE
-                });
-                true
+                match (x, y) {
+                    (ValOrRef::Val(Val::Int(l)), ValOrRef::Val(Val::Int(r))) => {
+                        e.push(if l $op r {
+                            VAL_TRUE
+                        } else {
+                            VAL_FALSE
+                        });
+                        true
+                    },
+                    (x, y) => {
+                        e.stack.extend([y, x]);
+                        return false
+                    }
+                }
             })
         }
     };
@@ -146,32 +154,31 @@ b_cmp!(b_ge, >);
 b_cmp!(b_geq, >=);
 
 fn b_true(e: &mut Eval) -> bool {
-    e.stack.push(VAL_TRUE);
+    e.push(VAL_TRUE);
     true
 }
 fn b_false(e: &mut Eval) -> bool {
-    e.stack.push(VAL_FALSE);
+    e.push(VAL_FALSE);
     true
 }
 
 fn b_or(e: &mut Eval) -> bool {
     e.arity(|e, [x, y]| {
-        e.stack.push(if x.is_truthy() { x } else { y });
+        e.push(if x.is_truthy() { x } else { y });
         true
     })
 }
 
 fn b_and(e: &mut Eval) -> bool {
     e.arity(|e, [x, y]| {
-        e.stack.push(if !x.is_truthy() { x } else { y });
+        e.push(if !x.is_truthy() { x } else { y });
         true
     })
 }
 
 fn b_not(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
-        e.stack
-            .push(if x.is_truthy() { VAL_FALSE } else { VAL_TRUE });
+        e.push(if x.is_truthy() { VAL_FALSE } else { VAL_TRUE });
         true
     })
 }
@@ -218,68 +225,68 @@ fn index_helper(i0: i64, vs: &Vals, allow_end: bool) -> Option<usize> {
 
 b_typed!(
     b_length(e, x : Val::Quote(vs)) {
-        e.stack.push(Val::Int(vs.len() as i64));
+        e.push(Val::Int(vs.len() as i64));
     }
 
     b_append(e, x : Val::Quote(mut ls), y : Val::Quote(mut rs)) {
         ls.extend(rs.drain(..));
-        e.stack.push(Val::Quote(ls));
+        e.push(Val::Quote(ls));
     }
 
     b_push_back(e, x : v, y : Val::Quote(mut vs)) {
         vs.push_back(v);
-        e.stack.push(Val::Quote(vs));
+        e.push(Val::Quote(vs));
     }
 
     b_push_front(e, x : v, y : Val::Quote(mut vs)) {
         vs.push_front(v);
-        e.stack.push(Val::Quote(vs));
+        e.push(Val::Quote(vs));
     }
 
     b_head(e, x : Val::Quote(mut vs)) {
         if vs.len() == 0 {
             eprintln!("Can't use `head` on an empty list");
-            e.stack.push(Val::Quote(vs));
+            e.push(Val::Quote(vs));
             return false
         }
 
-        e.stack.push(vs.pop_front().unwrap());
+        e.push(vs.pop_front().unwrap());
     }
 
     b_tail(e, x : Val::Quote(mut vs)) {
         if vs.len() == 0 {
             eprintln!("Can't use `tail` on an empty list");
-            e.stack.push(Val::Quote(vs));
+            e.push(Val::Quote(vs));
             return false
         }
         _ = vs.pop_front();
-        e.stack.push(Val::Quote(vs));
+        e.push(Val::Quote(vs));
     }
 
     b_last(e, x : Val::Quote(mut vs)) {
         if vs.len() == 0 {
             eprintln!("Can't use `last` on an empty list");
-            e.stack.push(Val::Quote(vs));
+            e.push(Val::Quote(vs));
             return false
         }
 
-        e.stack.push(vs.pop_back().unwrap());
+        e.push(vs.pop_back().unwrap());
     }
 
     b_init(e, x : Val::Quote(mut vs)) {
         if vs.len() == 0 {
             eprintln!("Can't use `init` on an empty list");
-            e.stack.push(Val::Quote(vs));
+            e.push(Val::Quote(vs));
             return false
         }
         _ = vs.pop_back();
-        e.stack.push(Val::Quote(vs));
+        e.push(Val::Quote(vs));
     }
 
     b_head_tail(e, x : Val::Quote(mut vs)) {
         if vs.len() == 0 {
             eprintln!("Can't use `head-tail` on an empty list");
-            e.stack.push(Val::Quote(vs));
+            e.push(Val::Quote(vs));
             return false
         }
 
@@ -290,7 +297,7 @@ b_typed!(
     b_last_init(e, x : Val::Quote(mut vs)) {
         if vs.len() == 0 {
             eprintln!("Can't use `last-init` on an empty list");
-            e.stack.push(Val::Quote(vs));
+            e.push(Val::Quote(vs));
             return false
         }
 
@@ -303,7 +310,7 @@ b_typed!(
             e.stack.extend([Val::Quote(vs), Val::Int(i0)]);
             return false
         };
-        e.stack.push(vs.into_iter().nth(i).unwrap());
+        e.push(vs.into_iter().nth(i).unwrap());
     }
 
     b_set_nth(e, x : Val::Int(mut i0), y : v, z : Val::Quote(mut vs)) {
@@ -312,7 +319,7 @@ b_typed!(
             return false
         };
         vs[i] = v;
-        e.stack.push(Val::Quote(vs));
+        e.push(Val::Quote(vs));
     }
 
     b_insert_before(e, x : Val::Int(mut i0), y : v, z : Val::Quote(mut vs)) {
@@ -321,7 +328,7 @@ b_typed!(
             return false
         };
         vs.insert(i, v);
-        e.stack.push(Val::Quote(vs))
+        e.push(Val::Quote(vs))
     }
 
     b_remove_nth(e, x : Val::Int(mut i0), z : Val::Quote(mut vs)) {
@@ -330,7 +337,7 @@ b_typed!(
             return false
         };
         vs.remove(i);
-        e.stack.push(Val::Quote(vs))
+        e.push(Val::Quote(vs))
     }
 
     b_swap_remove_nth(e, x : Val::Int(mut i0), z : Val::Quote(mut vs)) {
@@ -339,7 +346,7 @@ b_typed!(
             return false
         };
         vs.swap_remove_back(i);
-        e.stack.push(Val::Quote(vs))
+        e.push(Val::Quote(vs))
     }
 
     b_concat(e, x : Val::Quote(mut vs)) {
@@ -351,7 +358,7 @@ b_typed!(
             }
         }) else {
             eprintln!("Type error for `concat`");
-            e.stack.push(Val::Quote(vs));
+            e.push(Val::Quote(vs));
             return false
         };
         let mut r = Vals::with_capacity(size);
@@ -361,7 +368,7 @@ b_typed!(
             };
             vss
         }));
-        e.stack.push(Val::Quote(r));
+        e.push(Val::Quote(r));
     }
 
     b_slice(e, x : Val::Int(from), y : Val::Int(to), z : Val::Quote(mut vs)) {
@@ -376,17 +383,18 @@ b_typed!(
         }
         _ = vs.drain(j..);
         _ = vs.drain(..i);
-        e.stack.push(Val::Quote(vs));
+        e.push(Val::Quote(vs));
     }
 );
 
 fn b_type_of(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
         match x {
-            Val::Quote(_) => e.stack.push(Val::Kw(LIST_SYM)),
-            Val::Int(_) => e.stack.push(Val::Kw(INT_SYM)),
-            Val::Sym(_) => e.stack.push(Val::Kw(SYMBOL_SYM)),
-            Val::Kw(_) => e.stack.push(Val::Kw(KEYWORD_SYM)),
+            ValOrRef::Val(Val::Quote(_)) => e.push(Val::Kw(LIST_SYM)),
+            ValOrRef::Val(Val::Int(_)) => e.push(Val::Kw(INT_SYM)),
+            ValOrRef::Val(Val::Sym(_)) => e.push(Val::Kw(SYMBOL_SYM)),
+            ValOrRef::Val(Val::Kw(_)) => e.push(Val::Kw(KEYWORD_SYM)),
+            ValOrRef::Ref(_) => e.push(Val::Kw(LIST_SYM)),
         }
         true
     })
@@ -398,9 +406,9 @@ macro_rules! b_type_pred {
             fn $name(e: &mut Eval) -> bool {
                 e.arity(|e, [x]| {
                     if let $ty = x {
-                        e.stack.push(VAL_TRUE)
+                        e.push(VAL_TRUE)
                     } else {
-                        e.stack.push(VAL_FALSE)
+                        e.push(VAL_FALSE)
                     }
                     true
                 })
@@ -418,7 +426,7 @@ b_type_pred!(
 
 fn b_quote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
-        e.stack.push(Val::Quote(VecDeque::from([x])));
+        e.push(Val::Quote(Vals::from([x.into()])));
         true
     })
 }
@@ -426,7 +434,7 @@ fn b_quote(e: &mut Eval) -> bool {
 fn b_unquote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
         let Val::Quote(xs) = x else {
-            e.stack.push(x);
+            e.push(x);
             return false;
         };
         e.program.extend(xs.into_iter());
@@ -459,7 +467,7 @@ fn b_leave_scope(e: &mut Eval) -> bool {
 fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
 where
     F: FnOnce(&Vals, &Eval) -> bool,
-    G: FnOnce(&Vals, &mut HashMap<Sym, Vals>, &mut Eval) -> bool,
+    G: FnOnce(&Vals, &mut HashMap<Sym, Ref>, &mut Eval) -> bool,
 {
     e.arity(|e, [x, y]| {
         'fail: loop {
@@ -519,7 +527,7 @@ fn b_locals(e: &mut Eval) -> bool {
             }
 
             for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-                scope.insert(*l, VecDeque::from([v]));
+                scope.insert(*l, Ref::new(Vals::from([v.into()])));
             }
 
             true
@@ -541,7 +549,7 @@ fn b_define(e: &mut Eval) -> bool {
                     eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
                     return false;
                 };
-                scope.insert(*k, v.clone());
+                scope.insert(*k, Ref::new(v.clone()));
             }
             true
         },
