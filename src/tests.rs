@@ -169,11 +169,10 @@ fn types() {
     for (ty0, _) in groups {
         for (ty1, vals) in groups {
             for val in vals.iter() {
-                evals(&format!("{}? {}", ty0, val), if ty0 == ty1 {
-                    "1"
-                } else {
-                    "0"
-                });
+                evals(
+                    &format!("{}? {}", ty0, val),
+                    if ty0 == ty1 { "1" } else { "0" },
+                );
             }
         }
     }
@@ -288,6 +287,18 @@ fn list() {
     evals("last {1 2 3}", "3");
     evals("last {3}", "3");
     fails("last {}", "last", "{}");
+
+    evals("head-tail {1 2 3 4}", "1 {2 3 4}");
+    evals("head-tail {1}", "1 {}");
+    evals("head-tail {{1}}", "{1} {}");
+    fails("head-tail 1", "head-tail", "1");
+    fails("head-tail {}", "head-tail", "{}");
+
+    evals("last-init {1 2 3 4}", "4 {1 2 3}");
+    evals("last-init {1}", "1 {}");
+    evals("last-init {{1}}", "{1} {}");
+    fails("last-init 1", "last-init", "1");
+    fails("last-init {}", "last-init", "{}");
 
     evals("nth 0 {1 2 3}", "1");
     evals("nth 2 {1 2 3}", "3");

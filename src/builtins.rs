@@ -37,6 +37,8 @@ pub fn builtins() -> HashMap<&'static str, Builtin> {
     b.insert("tail", b_tail);
     b.insert("init", b_init);
     b.insert("last", b_last);
+    b.insert("head-tail", b_head_tail);
+    b.insert("last-init", b_last_init);
     b.insert("nth", b_nth);
     b.insert("set-nth", b_set_nth);
     b.insert("insert-before", b_insert_before);
@@ -268,6 +270,28 @@ b_typed!(
         }
         _ = vs.pop_back();
         e.stack.push(Val::Quote(vs));
+    }
+
+    b_head_tail(e, x : Val::Quote(mut vs)) {
+        if vs.len() == 0 {
+            eprintln!("Can't use `head-tail` on an empty list");
+            e.stack.push(Val::Quote(vs));
+            return false
+        }
+
+        let h = vs.pop_front().unwrap();
+        e.stack.extend([Val::Quote(vs), h]);
+    }
+
+    b_last_init(e, x : Val::Quote(mut vs)) {
+        if vs.len() == 0 {
+            eprintln!("Can't use `last-init` on an empty list");
+            e.stack.push(Val::Quote(vs));
+            return false
+        }
+
+        let h = vs.pop_back().unwrap();
+        e.stack.extend([Val::Quote(vs), h]);
     }
 
     b_nth(e, x : Val::Int(mut i0), y : Val::Quote(mut vs)) {
