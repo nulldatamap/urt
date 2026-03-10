@@ -13,8 +13,8 @@ fn evals<'a>(program: &'a str, stack: &'a str) {
         Err(e) => {
             panic!(
                 "Evaluation failed:\n{:?} | {:?}",
-                Program(&e.program),
-                Values(&e.stack)
+                Program(&e.sym_table, &e.program),
+                Values(&e.sym_table, &e.stack)
             );
         }
     }
@@ -24,7 +24,7 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
     let mut t = SymbolTable::new();
     let p = parse(program, &mut t).unwrap();
     let p0 = parse(fail_tail, &mut t).unwrap();
-    let mut exp0: Vals = parse(stack, &mut t).unwrap().into_iter().rev().collect();
+    let exp0: Vals = parse(stack, &mut t).unwrap();
     match eval(p, t) {
         Ok(got) => panic!(
             "Expected program to fail!\nProgram: {:?}\nResult: {:?}",
@@ -49,10 +49,10 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
             assert!(
                 matches,
                 "Unexpected program fail state!\nExpected: {:?} | {:?}\nGot: {:?} | {:?}",
-                Program(&p0),
-                res,
-                Program(&e.program),
-                Values(&e.stack)
+                Program(&e.sym_table, &p0),
+                Program(&e.sym_table, &res),
+                Program(&e.sym_table, &e.program),
+                Values(&e.sym_table, &e.stack)
             );
         }
     }

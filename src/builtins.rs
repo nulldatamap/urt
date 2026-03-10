@@ -184,19 +184,17 @@ fn b_not(e: &mut Eval) -> bool {
 }
 
 macro_rules! b_typed {
-    ($($name:ident ($e:ident, $($xs:ident : $tys:pat),+) $body:stmt)+) => {
+    ($($name:ident ($e:ident, $($xs:ident),+) if $pred:expr => $body:stmt)+) => {
         $(fn $name(e: &mut Eval) -> bool {
-            e.arity(|$e, [$($xs),+]| {
-                match [$($xs),+] {
-                    [$($tys),+]=> {
-                        $body
-                        true
-                    },
-                    xs => {
-                        eprintln!("Type error for `{}`", &stringify!($name).replace('_', "-")[2..]);
-                        $e.stack.extend(xs.into_iter().rev());
-                        false
-                    }
+            #[allow(unused_mut)]
+            e.arity(|$e, [$(mut $xs),+]| {
+                if $pred {
+                    $body
+                    true
+                } else {
+                    eprintln!("Type error for `{}`", &stringify!($name).replace('_', "-")[2..]);
+                    $e.stack.extend([$($xs),+].into_iter().rev());
+                    false
                 }
             })
         })+
@@ -224,145 +222,135 @@ fn index_helper(i0: i64, vs: &Vals, allow_end: bool) -> Option<usize> {
 }
 
 b_typed!(
-    b_length(e, x : Val::Quote(vs)) {
-        e.push(Val::Int(vs.len() as i64));
+    b_length(e, vs) if vs.is_list() => {
+        e.push(Val::Int(vs.list().len() as i64));
     }
 
-    b_append(e, x : Val::Quote(mut ls), y : Val::Quote(mut rs)) {
-        ls.extend(rs.drain(..));
-        e.push(Val::Quote(ls));
+    b_append(e, ls, rs) if ls.is_list() && rs.is_list() => {
+        ls.list_mut().extend(rs.into_list().drain(..));
+        e.push(ls);
     }
 
-    b_push_back(e, x : v, y : Val::Quote(mut vs)) {
-        vs.push_back(v);
-        e.push(Val::Quote(vs));
+    b_push_back(e, v, vs) if vs.is_list() => {
+        vs.list_mut().push_back(v.into());
+        e.push(vs);
     }
 
-    b_push_front(e, x : v, y : Val::Quote(mut vs)) {
-        vs.push_front(v);
-        e.push(Val::Quote(vs));
+    b_push_front(e, v, vs) if vs.is_list() => {
+        vs.list_mut().push_front(v.into());
+        e.push(vs);
     }
 
-    b_head(e, x : Val::Quote(mut vs)) {
-        if vs.len() == 0 {
+    b_head(e, vs) if vs.is_list() => {
+        if vs.list().len() == 0 {
             eprintln!("Can't use `head` on an empty list");
-            e.push(Val::Quote(vs));
+            e.push(vs);
             return false
         }
 
-        e.push(vs.pop_front().unwrap());
+        e.push(vs.list().front().unwrap().clone());
     }
 
-    b_tail(e, x : Val::Quote(mut vs)) {
-        if vs.len() == 0 {
+    b_tail(e, vs) if vs.is_list() => {
+        if vs.list().len() == 0 {
             eprintln!("Can't use `tail` on an empty list");
-            e.push(Val::Quote(vs));
+            e.push(vs);
             return false
         }
-        _ = vs.pop_front();
-        e.push(Val::Quote(vs));
+        vs.list_mut().pop_front();
+        e.push(vs);
     }
 
-    b_last(e, x : Val::Quote(mut vs)) {
-        if vs.len() == 0 {
-            eprintln!("Can't use `last` on an empty list");
-            e.push(Val::Quote(vs));
+    b_last(e, vs) if vs.is_list() => {
+        if vs.list().len() == 0 {
+            eprintln!("Can't use `head` on an empty list");
+            e.push(vs);
             return false
         }
 
-        e.push(vs.pop_back().unwrap());
+        e.push(vs.list().back().unwrap().clone());
     }
 
-    b_init(e, x : Val::Quote(mut vs)) {
-        if vs.len() == 0 {
-            eprintln!("Can't use `init` on an empty list");
-            e.push(Val::Quote(vs));
+    b_init(e, vs) if vs.is_list() => {
+        if vs.list().len() == 0 {
+            eprintln!("Can't use `tail` on an empty list");
+            e.push(vs);
             return false
         }
-        _ = vs.pop_back();
-        e.push(Val::Quote(vs));
+        vs.list_mut().pop_back();
+        e.push(vs);
     }
 
-    b_head_tail(e, x : Val::Quote(mut vs)) {
-        if vs.len() == 0 {
+    b_head_tail(e, vs) if vs.is_list() => {
+        if vs.list().len() == 0 {
             eprintln!("Can't use `head-tail` on an empty list");
-            e.push(Val::Quote(vs));
+            e.push(vs);
             return false
         }
 
-        let h = vs.pop_front().unwrap();
-        e.stack.extend([Val::Quote(vs), h]);
+        let h = vs.list_mut().pop_front().unwrap();
+        e.stack.extend([vs, h.into()]);
     }
 
-    b_last_init(e, x : Val::Quote(mut vs)) {
-        if vs.len() == 0 {
-            eprintln!("Can't use `last-init` on an empty list");
-            e.push(Val::Quote(vs));
+    b_last_init(e, vs) if vs.is_list() => {
+        if vs.list().len() == 0 {
+            eprintln!("Can't use `head-tail` on an empty list");
+            e.push(vs);
             return false
         }
 
-        let h = vs.pop_back().unwrap();
-        e.stack.extend([Val::Quote(vs), h]);
+        let h = vs.list_mut().pop_back().unwrap();
+        e.stack.extend([vs, h.into()]);
     }
 
-    b_nth(e, x : Val::Int(mut i0), y : Val::Quote(mut vs)) {
-        let Some(i) = index_helper(i0, &vs, false) else {
-            e.stack.extend([Val::Quote(vs), Val::Int(i0)]);
+    b_nth(e, i0, vs) if i0.is_int() && vs.is_list() => {
+        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+            e.stack.extend([vs, i0]);
             return false
         };
-        e.push(vs.into_iter().nth(i).unwrap());
+        e.push(vs.list()[i].clone());
     }
 
-    b_set_nth(e, x : Val::Int(mut i0), y : v, z : Val::Quote(mut vs)) {
-        let Some(i) = index_helper(i0, &vs, false) else {
-            e.stack.extend([Val::Quote(vs), v, Val::Int(i0)]);
+    b_set_nth(e, i0, v, vs) if i0.is_int() && vs.is_list() => {
+        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+            e.stack.extend([vs, v, i0]);
             return false
         };
-        vs[i] = v;
-        e.push(Val::Quote(vs));
+        vs.list_mut()[i] = v.into();
+        e.push(vs);
     }
 
-    b_insert_before(e, x : Val::Int(mut i0), y : v, z : Val::Quote(mut vs)) {
-        let Some(i) = index_helper(i0, &vs, true) else {
-            e.stack.extend([Val::Quote(vs), v, Val::Int(i0)]);
+    b_insert_before(e, i0, v, vs) if i0.is_int() && vs.is_list() => {
+        let Some(i) = index_helper(i0.int(), vs.list(), true) else {
+            e.stack.extend([vs, v, i0]);
             return false
         };
-        vs.insert(i, v);
-        e.push(Val::Quote(vs))
+        vs.list_mut().insert(i, v.into());
+        e.push(vs)
     }
 
-    b_remove_nth(e, x : Val::Int(mut i0), z : Val::Quote(mut vs)) {
-        let Some(i) = index_helper(i0, &vs, false) else {
-            e.stack.extend([Val::Quote(vs), Val::Int(i0)]);
+    b_remove_nth(e, i0, vs) if i0.is_int() && vs.is_list() => {
+        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+            e.stack.extend([vs, i0]);
             return false
         };
-        vs.remove(i);
-        e.push(Val::Quote(vs))
+        vs.list_mut().remove(i);
+        e.push(vs);
     }
 
-    b_swap_remove_nth(e, x : Val::Int(mut i0), z : Val::Quote(mut vs)) {
-        let Some(i) = index_helper(i0, &vs, false) else {
-            e.stack.extend([Val::Quote(vs), Val::Int(i0)]);
+    b_swap_remove_nth(e, i0, vs) if i0.is_int() && vs.is_list() => {
+        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+            e.stack.extend([vs, i0]);
             return false
         };
-        vs.swap_remove_back(i);
-        e.push(Val::Quote(vs))
+        vs.list_mut().swap_remove_back(i);
+        e.push(vs);
     }
 
-    b_concat(e, x : Val::Quote(mut vs)) {
-        let Some(size) = vs.iter().try_fold(0, |s, v| {
-            if let Val::Quote(vss) = v {
-                Some(s + vss.len())
-            } else {
-                None
-            }
-        }) else {
-            eprintln!("Type error for `concat`");
-            e.push(Val::Quote(vs));
-            return false
-        };
+    b_concat(e, vs) if vs.is_list() && vs.list().iter().all(|x| x.is_list()) => {
+        let size = vs.list().iter().map(|x| x.list().len()).sum();
         let mut r = Vals::with_capacity(size);
-        r.extend(vs.into_iter().flat_map(|v| {
+        r.extend(vs.into_list().into_iter().flat_map(|v| {
             let Val::Quote(vss) = v else {
                 unreachable!();
             };
@@ -371,20 +359,20 @@ b_typed!(
         e.push(Val::Quote(r));
     }
 
-    b_slice(e, x : Val::Int(from), y : Val::Int(to), z : Val::Quote(mut vs)) {
-        let (Some(i), Some(j)) = (index_helper(from, &vs, true), index_helper(to, &vs, true)) else {
-            e.stack.extend([Val::Quote(vs), Val::Int(to), Val::Int(from)]);
-            return false
-        };
-        if i > j || (i > 0 && vs.len() == 0) {
-            eprintln!("Invalid slice range");
-            e.stack.extend([Val::Quote(vs), Val::Int(to), Val::Int(from)]);
-            return false
-        }
-        _ = vs.drain(j..);
-        _ = vs.drain(..i);
-        e.push(Val::Quote(vs));
-    }
+     b_slice(e, from, to, vs) if from.is_int() && to.is_int() && vs.is_list() => {
+         let (Some(i), Some(j)) = (index_helper(from.int(), vs.list(), true), index_helper(to.int(), vs.list(), true)) else {
+             e.stack.extend([vs, to, from]);
+             return false
+         };
+         if i > j || (i > 0 && vs.list().len() == 0) {
+             eprintln!("Invalid slice range");
+             e.stack.extend([vs, to, from]);
+             return false
+         }
+         _ = vs.list_mut().drain(j..);
+         _ = vs.list_mut().drain(..i);
+         e.push(vs);
+     }
 );
 
 fn b_type_of(e: &mut Eval) -> bool {
@@ -401,11 +389,11 @@ fn b_type_of(e: &mut Eval) -> bool {
 }
 
 macro_rules! b_type_pred {
-    ($($name:ident $ty:pat),+) => (
+    ($($name:ident $pred:ident),+) => (
         $(
             fn $name(e: &mut Eval) -> bool {
                 e.arity(|e, [x]| {
-                    if let $ty = x {
+                    if x.$pred() {
                         e.push(VAL_TRUE)
                     } else {
                         e.push(VAL_FALSE)
@@ -418,10 +406,10 @@ macro_rules! b_type_pred {
 }
 
 b_type_pred!(
-    b_is_int Val::Int(_),
-    b_is_symbol Val::Sym(_),
-    b_is_keyword Val::Kw(_),
-    b_is_list Val::Quote(_)
+    b_is_int is_int,
+    b_is_symbol is_sym,
+    b_is_keyword is_kw,
+    b_is_list is_list
 );
 
 fn b_quote(e: &mut Eval) -> bool {
@@ -433,30 +421,31 @@ fn b_quote(e: &mut Eval) -> bool {
 
 fn b_unquote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
-        let Val::Quote(xs) = x else {
+        if x.is_list() {
+            e.program.extend(x.into_list());
+            true
+        } else {
             e.push(x);
             return false;
-        };
-        e.program.extend(xs.into_iter());
-        true
+        }
     })
 }
 
 fn b_choose(e: &mut Eval) -> bool {
-    e.arity(|e, [x, y, z]| match (x, y) {
-        (Val::Quote(t), Val::Quote(f)) => {
-            if z.is_truthy() {
-                e.program.extend(t);
+    e.arity(|e, [t, f, c]|
+        if t.is_list() && f.is_list() {
+            if c.is_truthy() {
+                e.program.extend(t.into_list());
             } else {
-                e.program.extend(f);
+                e.program.extend(f.into_list());
             }
             true
         }
-        (x, y) => {
-            e.stack.extend([z, y, x]);
+        else {
+            e.stack.extend([c, f, t]);
             false
         }
-    })
+    )
 }
 
 fn b_leave_scope(e: &mut Eval) -> bool {
@@ -469,11 +458,11 @@ where
     F: FnOnce(&Vals, &Eval) -> bool,
     G: FnOnce(&Vals, &mut HashMap<Sym, Ref>, &mut Eval) -> bool,
 {
-    e.arity(|e, [x, y]| {
+    e.arity(|e, [bs, v]| {
         'fail: loop {
-            if let Val::Quote(ls) = &x
-                && let Val::Quote(v) = &y
-                && fst_cond(ls, e)
+            if bs.is_list()
+                && v.is_list()
+                && fst_cond(bs.list(), e)
             {
                 // Tail "call" optimization:
                 // Basically in a traditional "tail call" position the last operation is a "return"
@@ -491,7 +480,7 @@ where
                 } else {
                     HashMap::new()
                 };
-                if !build_scope(ls, &mut scope, e) {
+                if !build_scope(bs.list(), &mut scope, e) {
                     break 'fail;
                 }
 
@@ -499,15 +488,15 @@ where
                 if !in_tail_pos {
                     e.program.push_back(Val::Sym(LEAVE_SCOPE_SYM));
                 }
-                e.program.extend(v.clone());
+                e.program.extend(v.into_list());
 
                 return true;
             } else {
-                eprintln!("Invalid arguments: locals {:?} {:?}", x, y);
+                eprintln!("Invalid arguments: locals {:?} {:?}", bs, v);
                 break 'fail;
             }
         }
-        e.stack.extend([y, x]);
+        e.stack.extend([v, bs]);
         false
     })
 }
@@ -538,9 +527,9 @@ fn b_define(e: &mut Eval) -> bool {
     scoped_helper(
         e,
         |ds, _e| ds.len() % 2 == 0,
-        |ds, scope, _e| {
+        |ds, scope, e| {
             if ds.len() % 2 == 1 {
-                eprintln!("Invalid definitions: {{{:?}}}", Program(ds));
+                eprintln!("Invalid definitions: {{{:?}}}", Program(&e.sym_table, ds));
                 return false;
             };
             for i in 0..(ds.len() / 2) {

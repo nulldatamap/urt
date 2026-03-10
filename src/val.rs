@@ -60,6 +60,54 @@ pub const VAL_FALSE: Val = Val::Int(0);
 pub const VAL_EMPTY: Val = Val::Quote(VecDeque::new());
 
 impl Val {
+    pub fn is_int(&self) -> bool {
+        matches!(self, Val::Int(_))
+    }
+
+    pub fn is_list(&self) -> bool {
+        matches!(self, Val::Quote(_))
+    }
+
+    pub fn is_sym(&self) -> bool {
+        matches!(self, Val::Sym(_))
+    }
+
+    pub fn is_kw(&self) -> bool {
+        matches!(self, Val::Kw(_))
+    }
+
+    pub fn list(&self) -> &Vals {
+        if let Val::Quote(vs) = self {
+            vs
+        } else {
+            panic!("{:?} is not a list", self);
+        }
+    }
+
+    pub fn sym(&self) -> Sym {
+        if let Val::Sym(s) = self {
+            *s
+        } else {
+            panic!("{:?} is not a symbol", self);
+        }
+    }
+
+    pub fn kw(&self) -> Sym {
+        if let Val::Kw(s) = self {
+            *s
+        } else {
+            panic!("{:?} is not a keyword", self);
+        }
+    }
+
+    pub fn int(&self) -> i64 {
+        if let Val::Int(i) = self {
+            *i
+        } else {
+            panic!("{:?} is not an int", self);
+        }
+    }
+
     pub(crate) fn is_truthy(&self) -> bool {
         match self {
             Val::Int(x) => *x != 0,
@@ -75,8 +123,8 @@ impl fmt::Debug for Val {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Val::Int(i) => write!(f, "{i}"),
-            Val::Sym(s) => write!(f, "{s:?}"),
-            Val::Kw(s) => write!(f, ":{s:?}"),
+            Val::Sym(Sym(s)) => write!(f, "##{s:X}"),
+            Val::Kw(Sym(s)) => write!(f, ":##{s:X}"),
             Val::Quote(vals) => {
                 write!(f, "{{")?;
                 let mut first = true;
@@ -93,13 +141,25 @@ impl fmt::Debug for Val {
     }
 }
 
-pub struct Program<'a>(pub &'a Vals);
-pub struct Values<'a>(pub &'a [ValOrRef]);
+pub struct Program<'a>(pub &'a SymbolTable, pub &'a Vals);
+pub struct Values<'a>(pub &'a SymbolTable, pub &'a [ValOrRef]);
+pub struct Value<'a>(pub &'a SymbolTable, pub &'a Val);
+
+impl<'a> fmt::Debug for Value<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.1 {
+            Val::Int(i) => write!(f, "{i}"),
+            Val::Sym(s) => write!(f, "{}", self.0.str(*s)),
+            Val::Kw(s) => write!(f, ":{}", self.0.str(*s)),
+            Val::Quote(vals) => Program(self.0, vals).fmt(f),
+        }
+    }
+}
 
 impl<'a> fmt::Debug for Program<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let start = self
-            .0
+            .1
             .iter()
             .rposition(|x| matches!(x, Val::Sym(k) if *k == LEAVE_SCOPE_SYM))
             .map(|x| x + 1)
@@ -108,12 +168,12 @@ impl<'a> fmt::Debug for Program<'a> {
         if start > 0 {
             write!(f, "... ")?;
         }
-        for v in self.0.iter().skip(start) {
+        for v in self.1.iter().skip(start) {
             if !first {
                 write!(f, " ")?;
             }
             first = false;
-            write!(f, "{:?}", v)?;
+            write!(f, "{:?}", Value(self.0, v))?;
         }
         Ok(())
     }
@@ -122,12 +182,16 @@ impl<'a> fmt::Debug for Program<'a> {
 impl<'a> fmt::Debug for Values<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for v in self.0.iter().rev() {
+        for v in self.1.iter().rev() {
             if !first {
                 write!(f, " ")?;
             }
             first = false;
-            write!(f, "{:?}", v)?;
+            match v {
+                ValOrRef::Val(v) => write!(f, "{:?}", Value(self.0, v))?,
+                ValOrRef::Ref(vs) => write!(f, "{{{:?}}}", Program(self.0, vs))?
+
+            }
         }
         Ok(())
     }

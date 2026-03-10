@@ -10,7 +10,7 @@ pub type Builtin = fn(&mut Eval) -> bool;
 
 pub type Ref = Rc<Vals>;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum ValOrRef {
     Val(Val),
     Ref(Ref)
@@ -45,6 +45,55 @@ impl ValOrRef {
         }
     }
 
+    pub fn int(&self) -> i64 {
+        let ValOrRef::Val(Val::Int(i)) = self else {
+            panic!("Tried to get int from {:?}", self);
+        };
+        *i
+    }
+
+    pub fn sym(&self) -> Sym {
+        let ValOrRef::Val(Val::Sym(s)) = self else {
+            panic!("Tried to get int from {:?}", self);
+        };
+        *s
+    }
+
+    pub fn kw(&self) -> Sym {
+        let ValOrRef::Val(Val::Kw(kw)) = self else {
+            panic!("Tried to get int from {:?}", self);
+        };
+        *kw
+    }
+
+    pub fn list(&self) -> &Vals {
+        match self {
+            ValOrRef::Val(Val::Quote(vs)) => vs,
+            ValOrRef::Ref(r) => r.as_ref(),
+            _ => panic!("Tried to get list from {:?}", self)
+        }
+    }
+
+    pub fn into_list(self) -> Vals {
+        match self {
+            ValOrRef::Val(Val::Quote(vs)) => vs,
+            ValOrRef::Ref(r) => r.as_ref().clone(),
+            _ => panic!("Tried to get list from {:?}", self)
+        }
+    }
+
+    pub fn list_mut(&mut self) -> &mut Vals {
+        match self {
+            ValOrRef::Val(Val::Quote(vs)) => vs,
+            ValOrRef::Ref(r) => {
+                *self = ValOrRef::Val(Val::Quote(r.as_ref().clone()));
+                let ValOrRef::Val(Val::Quote(r)) = self else { unreachable!() };
+                r
+            },
+            _ => panic!("Tried to get list from {:?}", self)
+        }
+    }
+
     pub fn is_truthy(&self) -> bool {
         match self {
             ValOrRef::Val(x) => x.is_truthy(),
@@ -53,25 +102,6 @@ impl ValOrRef {
     }
 }
 
-impl fmt::Debug for ValOrRef {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            ValOrRef::Val(x) => x.fmt(f),
-            ValOrRef::Ref(vals) => {
-                write!(f, "{{")?;
-                let mut first = true;
-                for v in vals.iter() {
-                    if !first {
-                        write!(f, " ")?;
-                    }
-                    first = false;
-                    write!(f, "{:?}", v)?;
-                }
-                write!(f, "}}")
-            }
-        }
-    }
-}
 
 impl From<Val> for ValOrRef {
     fn from(value: Val) -> Self {
@@ -95,7 +125,7 @@ impl Into<Val> for ValOrRef {
 
 pub struct Eval {
     builtins: HashMap<Sym, Builtin>,
-    sym_table: SymbolTable,
+    pub(crate) sym_table: SymbolTable,
     pub(crate) lexicon: Vec<HashMap<Sym, Ref>>,
     pub(crate) program: Vals,
     pub(crate) stack: Vec<ValOrRef>,
@@ -119,15 +149,15 @@ pub fn trace(program: Vals, t: SymbolTable) -> Result<Vals, Eval> {
         for scope in &e.lexicon {
             scope_s.push_str("{ ");
             for kv in scope.iter() {
-                write!(scope_s, "{} {{{:?}}} ", e.sym_table.str(*kv.0), Program(&kv.1)).unwrap();
+                write!(scope_s, "{} {{{:?}}} ", e.sym_table.str(*kv.0), Program(&e.sym_table, &kv.1)).unwrap();
             }
             scope_s.push_str("} ");
             scopes_s.extend(scope_s.drain(..));
         }
         println!(
             "{:?} | {:?}\t\t{}",
-            Program(&e.program),
-            Values(&e.stack),
+            Program(&e.sym_table, &e.program),
+            Values(&e.sym_table, &e.stack),
             scopes_s
         )
     }

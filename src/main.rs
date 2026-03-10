@@ -22,5 +22,5 @@ fn main() {
     while e.step() {
         // println!("{:?} | {:?}", Program(&e.program), Values(&e.stack[..]));
     }
-    println!("{:?}", Values(&e.stack[..]));
+    println!("{:?}", Values(&e.sym_table, &e.stack[..]));
 }
