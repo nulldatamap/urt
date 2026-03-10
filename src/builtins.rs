@@ -193,6 +193,7 @@ macro_rules! b_typed {
     };
 }
 
+#[inline(always)]
 fn index_helper(i0: i64, vs: &Vals, allow_end: bool) -> Option<usize> {
     let n = vs.len() as i64;
     let i = if i0 < 0 {
@@ -431,17 +432,16 @@ fn b_unquote(e: &mut Eval) -> bool {
 }
 
 fn b_choose(e: &mut Eval) -> bool {
-    e.arity(|e, [x, y, z]| {
-        if let Val::Quote(t) = &x
-            && let Val::Quote(f) = &y
-        {
+    e.arity(|e, [x, y, z]| match (x, y) {
+        (Val::Quote(t), Val::Quote(f)) => {
             if z.is_truthy() {
-                e.program.extend(t.iter().cloned());
+                e.program.extend(t);
             } else {
-                e.program.extend(f.iter().cloned());
+                e.program.extend(f);
             }
             true
-        } else {
+        }
+        (x, y) => {
             e.stack.extend([z, y, x]);
             false
         }
@@ -452,6 +452,7 @@ fn b_leave_scope(e: &mut Eval) -> bool {
     e.lexicon.pop().is_some()
 }
 
+#[inline(always)]
 fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
 where
     F: FnOnce(&Vals, &Eval) -> bool,

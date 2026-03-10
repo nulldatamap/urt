@@ -61,6 +61,7 @@ impl Eval {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn arity<const N: usize, F>(&mut self, f: F) -> bool
     where
         F: FnOnce(&mut Eval, [Val; N]) -> bool,
@@ -77,26 +78,18 @@ impl Eval {
         }
     }
 
-    pub(crate) fn lookup(&self, x: &str) -> Option<&Vals> {
+    fn eval_sym(&mut self, x: &str) -> bool {
         for m in self.lexicon.iter().rev() {
             if let Some(v) = m.get(x) {
-                return Some(&v);
+                self.program.extend(v.iter().cloned());
+                return true;
             }
         }
-        None
-    }
-
-    fn eval_sym(&mut self, x: &str) -> bool {
-        if let Some(v) = self.lookup(x).cloned() {
-            self.program.extend(v.into_iter());
-            true
+        if let Some(f) = self.builtins.get(x) {
+            f(self)
         } else {
-            if let Some(f) = self.builtins.get(x) {
-                f(self)
-            } else {
-                eprintln!("Unknown symbol: `{}`", x);
-                false
-            }
+            eprintln!("Unknown symbol: `{}`", x);
+            false
         }
     }
 
