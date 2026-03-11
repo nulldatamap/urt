@@ -1,4 +1,4 @@
-use crate::eval::Eval;
+use crate::eval::{Eval, eval, Program, ContView};
 use crate::parser::parse;
 use crate::val::{SymbolTable, Vals, Values};
 
@@ -20,7 +20,8 @@ fn main() {
 
     let mut e = Eval::new(program, t);
     while e.step() {
-        // println!("{:?} | {:?}", Program(&e.program), Values(&e.stack[..]));
+        // println!("{:?} | {:?}", ContView(&e.sym_table, &e.program), Values(&e.sym_table, &e.stack[..]));
+        // println!("## {:?}", e.program);
     }
     println!("{:?}", Values(&e.sym_table, &e.stack[..]));
 }

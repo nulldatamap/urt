@@ -1,7 +1,7 @@
-use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
-use crate::eval::ValOrRef;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Sym(u64);
@@ -43,21 +43,45 @@ impl SymbolTable {
     }
 
     pub fn str(&self, x: Sym) -> &str {
-        self.symbols.iter().find(|kv| *kv.1 == x).expect("Invalid intern string").0
+        self.symbols
+            .iter()
+            .find(|kv| *kv.1 == x)
+            .expect("Invalid intern string")
+            .0
     }
 }
 
-#[derive(PartialEq, Clone)]
+pub type Ref = Rc<Vals>;
+
+#[derive(Clone, Debug)]
 pub enum Val {
     Int(i64),
     Sym(Sym),
     Kw(Sym),
-    Quote(Vals),
+    List(Vals),
+    Ref(Ref),
+}
+
+impl PartialEq for Val {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Int(i), Self::Int(j)) => *i == *j,
+            (Self::Sym(x), Self::Sym(y)) => *x == *y,
+            (Self::Kw(x), Self::Kw(y)) => *x == *y,
+            _ => {
+                if self.is_list() && other.is_list() {
+                    self.list() == other.list()
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 pub const VAL_TRUE: Val = Val::Int(1);
 pub const VAL_FALSE: Val = Val::Int(0);
-pub const VAL_EMPTY: Val = Val::Quote(VecDeque::new());
+pub const VAL_EMPTY: Val = Val::List(VecDeque::new());
 pub const VAL_LEAVE_SCOPE: Val = Val::Sym(LEAVE_SCOPE_SYM);
 
 impl Val {
@@ -66,7 +90,7 @@ impl Val {
     }
 
     pub fn is_list(&self) -> bool {
-        matches!(self, Val::Quote(_))
+        matches!(self, Val::List(_) | Val::Ref(_))
     }
 
     pub fn is_sym(&self) -> bool {
@@ -78,10 +102,57 @@ impl Val {
     }
 
     pub fn list(&self) -> &Vals {
-        if let Val::Quote(vs) = self {
-            vs
-        } else {
-            panic!("{:?} is not a list", self);
+        match self {
+            Val::List(l) => l,
+            Val::Ref(r) => r.as_ref(),
+            _ => panic!("{:?} is not a list", self),
+        }
+    }
+
+    pub fn into_list(self) -> Vals {
+        match self {
+            Val::List(vs) => vs,
+            Val::Ref(r) => r.as_ref().clone(),
+            _ => panic!("Tried to get list from {:?}", self),
+        }
+    }
+
+    pub fn into_list_ref(self) -> Ref {
+        match self {
+            Val::List(vs) => Ref::new(vs),
+            Val::Ref(r) => r,
+            _ => panic!("Tried to get list from {:?}", self),
+        }
+    }
+
+    pub fn into_sharable(self) -> Self {
+        match self {
+            Val::List(vs) => Val::Ref(Ref::new(vs)),
+            v => v
+        }
+    }
+
+    pub fn list_mut(&mut self) -> &mut Vals {
+        match self {
+            Val::List(vs) => vs,
+            Val::Ref(_) => {
+                let Val::Ref(r) = std::mem::replace(self, Val::Int(0)) else {
+                    unreachable!()
+                };
+                match Rc::try_unwrap(r) {
+                    Ok(vs) => {
+                        *self = Val::List(vs);
+                        let Val::List(vs) = self else { unreachable!() };
+                        vs
+                    }
+                    Err(r) => {
+                        *self = Val::List(r.as_ref().clone());
+                        let Val::List(r) = self else { unreachable!() };
+                        r
+                    }
+                }
+            }
+            _ => panic!("Tried to get list from {:?}", self),
         }
     }
 
@@ -112,7 +183,8 @@ impl Val {
     pub(crate) fn is_truthy(&self) -> bool {
         match self {
             Val::Int(x) => *x != 0,
-            Val::Quote(x) => x.len() != 0,
+            Val::List(x) => x.len() != 0,
+            Val::Ref(x) => x.len() != 0,
             _ => true,
         }
     }
@@ -120,30 +192,35 @@ impl Val {
 
 pub type Vals = VecDeque<Val>;
 
-impl fmt::Debug for Val {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Val::Int(i) => write!(f, "{i}"),
-            Val::Sym(Sym(s)) => write!(f, "##{s:X}"),
-            Val::Kw(Sym(s)) => write!(f, ":##{s:X}"),
-            Val::Quote(vals) => {
-                write!(f, "{{")?;
-                let mut first = true;
-                for v in vals {
-                    if !first {
-                        write!(f, " ")?;
-                    }
-                    first = false;
-                    write!(f, "{:?}", v)?;
-                }
-                write!(f, "}}")
-            }
-        }
-    }
-}
-
+// impl fmt::Debug for Val {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             Val::Int(i) => write!(f, "{i}"),
+//             Val::Sym(Sym(s)) => write!(f, "##{s:X}"),
+//             Val::Kw(Sym(s)) => write!(f, ":##{s:X}"),
+//             _ => {
+//                 let vals = match self {
+//                     Val::List(vs) => vs,
+//                     Val::Ref(r) => r.as_ref(),
+//                     _ => unreachable!(),
+//                 };
+//                 write!(f, "{{")?;
+//                 let mut first = true;
+//                 for v in vals {
+//                     if !first {
+//                         write!(f, " ")?;
+//                     }
+//                     first = false;
+//                     write!(f, "{:?}", v)?;
+//                 }
+//                 write!(f, "}}")
+//             }
+//         }
+//     }
+// }
+//
 pub struct Program<'a>(pub &'a SymbolTable, pub &'a Vals);
-pub struct Values<'a>(pub &'a SymbolTable, pub &'a [ValOrRef]);
+pub struct Values<'a>(pub &'a SymbolTable, pub &'a [Val]);
 pub struct Value<'a>(pub &'a SymbolTable, pub &'a Val);
 
 impl<'a> fmt::Debug for Value<'a> {
@@ -152,7 +229,8 @@ impl<'a> fmt::Debug for Value<'a> {
             Val::Int(i) => write!(f, "{i}"),
             Val::Sym(s) => write!(f, "{}", self.0.str(*s)),
             Val::Kw(s) => write!(f, ":{}", self.0.str(*s)),
-            Val::Quote(vals) => Program(self.0, vals).fmt(f),
+            Val::List(vals) => Program(self.0, vals).fmt(f),
+            Val::Ref(vals) => Program(self.0, vals.as_ref()).fmt(f),
         }
     }
 }
@@ -174,7 +252,7 @@ impl<'a> fmt::Debug for Program<'a> {
                 write!(f, " ")?;
             }
             first = false;
-            write!(f, "{:?}", Value(self.0, v))?;
+            write!(f, "{:?} ", Value(self.0, v))?;
         }
         Ok(())
     }
@@ -188,11 +266,7 @@ impl<'a> fmt::Debug for Values<'a> {
                 write!(f, " ")?;
             }
             first = false;
-            match v {
-                ValOrRef::Val(v) => write!(f, "{:?}", Value(self.0, v))?,
-                ValOrRef::Ref(vs) => write!(f, "{{{:?}}}", Program(self.0, vs))?
-
-            }
+            write!(f, "{:?} ", Value(self.0, v))?
         }
         Ok(())
     }

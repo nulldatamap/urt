@@ -5,7 +5,11 @@ pub fn parse(input: &str, t: &mut SymbolTable) -> Result<Vals, String> {
     parse_vals(&mut chars, t, false)
 }
 
-fn parse_vals<I>(chars: &mut std::iter::Peekable<I>, t : &mut SymbolTable, stop_on_close: bool) -> Result<Vals, String>
+fn parse_vals<I>(
+    chars: &mut std::iter::Peekable<I>,
+    t: &mut SymbolTable,
+    stop_on_close: bool,
+) -> Result<Vals, String>
 where
     I: Iterator<Item = char>,
 {
@@ -16,7 +20,7 @@ where
             '{' => {
                 chars.next(); // consume '{'
                 let inner = parse_vals(chars, t, true)?;
-                vals.push_back(Val::Quote(inner));
+                vals.push_back(Val::Ref(Ref::new(inner)));
             }
             '}' => {
                 chars.next(); // consume '}'

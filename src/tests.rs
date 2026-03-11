@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::eval::{eval, trace, ContView};
+use crate::eval::{ContView, eval};
 use crate::parser::parse;
 use crate::val::{Program, SymbolTable, Val, Vals, Values};
 
@@ -28,8 +28,7 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
     match eval(p, t) {
         Ok(got) => panic!(
             "Expected program to fail!\nProgram: {:?}\nResult: {:?}",
-            program,
-            got,
+            program, got,
         ),
         Err(e) => {
             let mut matches = e.program.iter().eq(p0.iter());

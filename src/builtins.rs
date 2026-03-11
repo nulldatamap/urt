@@ -1,5 +1,8 @@
-use crate::eval::{Builtin, Eval, Ref, ValOrRef};
-use crate::val::{Program, VAL_FALSE, VAL_TRUE, Val, Vals, SymbolTable, Sym, LIST_SYM, KEYWORD_SYM, SYMBOL_SYM, INT_SYM, LEAVE_SCOPE_SYM};
+use crate::eval::{Builtin, Eval, Ref, Slot, Value};
+use crate::val::{
+    INT_SYM, KEYWORD_SYM, LEAVE_SCOPE_SYM, LIST_SYM, Program, SYMBOL_SYM, Sym, SymbolTable,
+    VAL_FALSE, VAL_TRUE, Val, Vals,
+};
 use std::collections::{HashMap, VecDeque};
 
 pub fn builtins(t: &mut SymbolTable) -> HashMap<Sym, Builtin> {
@@ -91,7 +94,7 @@ macro_rules! b_arith {
         fn $name(e: &mut Eval) -> bool {
             e.arity(|e, [x, y]| {
                 match (x, y) {
-                    (ValOrRef::Val(Val::Int(l)), ValOrRef::Val(Val::Int(r))) => {
+                    (Val::Int(l), Val::Int(r)) => {
                         e.push(Val::Int(l $op r));
                         true
                     },
@@ -130,7 +133,7 @@ macro_rules! b_cmp {
         fn $name(e: &mut Eval) -> bool {
             e.arity(|e, [x, y]| {
                 match (x, y) {
-                    (ValOrRef::Val(Val::Int(l)), ValOrRef::Val(Val::Int(r))) => {
+                    (Val::Int(l), Val::Int(r)) => {
                         e.push(if l $op r {
                             VAL_TRUE
                         } else {
@@ -351,12 +354,9 @@ b_typed!(
         let size = vs.list().iter().map(|x| x.list().len()).sum();
         let mut r = Vals::with_capacity(size);
         r.extend(vs.into_list().into_iter().flat_map(|v| {
-            let Val::Quote(vss) = v else {
-                unreachable!();
-            };
-            vss
+            v.into_list()
         }));
-        e.push(Val::Quote(r));
+        e.push(Val::List(r));
     }
 
      b_slice(e, from, to, vs) if from.is_int() && to.is_int() && vs.is_list() => {
@@ -378,11 +378,11 @@ b_typed!(
 fn b_type_of(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
         match x {
-            ValOrRef::Val(Val::Quote(_)) => e.push(Val::Kw(LIST_SYM)),
-            ValOrRef::Val(Val::Int(_)) => e.push(Val::Kw(INT_SYM)),
-            ValOrRef::Val(Val::Sym(_)) => e.push(Val::Kw(SYMBOL_SYM)),
-            ValOrRef::Val(Val::Kw(_)) => e.push(Val::Kw(KEYWORD_SYM)),
-            ValOrRef::Ref(_) => e.push(Val::Kw(LIST_SYM)),
+            Val::List(_) => e.push(Val::Kw(LIST_SYM)),
+            Val::Int(_) => e.push(Val::Kw(INT_SYM)),
+            Val::Sym(_) => e.push(Val::Kw(SYMBOL_SYM)),
+            Val::Kw(_) => e.push(Val::Kw(KEYWORD_SYM)),
+            Val::Ref(_) => e.push(Val::Kw(LIST_SYM)),
         }
         true
     })
@@ -414,7 +414,7 @@ b_type_pred!(
 
 fn b_quote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
-        e.push(Val::Quote(Vals::from([x.into()])));
+        e.push(Val::List(Vals::from([x.into()])));
         true
     })
 }
@@ -432,7 +432,7 @@ fn b_unquote(e: &mut Eval) -> bool {
 }
 
 fn b_choose(e: &mut Eval) -> bool {
-    e.arity(|e, [t, f, c]|
+    e.arity(|e, [t, f, c]| {
         if t.is_list() && f.is_list() {
             if c.is_truthy() {
                 e.program.extend(t.into_list_ref());
@@ -440,12 +440,11 @@ fn b_choose(e: &mut Eval) -> bool {
                 e.program.extend(f.into_list_ref());
             }
             true
-        }
-        else {
+        } else {
             e.stack.extend([c, f, t]);
             false
         }
-    )
+    })
 }
 
 fn b_leave_scope(e: &mut Eval) -> bool {
@@ -456,14 +455,11 @@ fn b_leave_scope(e: &mut Eval) -> bool {
 fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
 where
     F: FnOnce(&Vals, &Eval) -> bool,
-    G: FnOnce(&Vals, &mut HashMap<Sym, Ref>, &mut Eval) -> bool,
+    G: FnOnce(&Vals, &mut HashMap<Sym, Slot>, &mut Eval) -> bool,
 {
     e.arity(|e, [bs, v]| {
         'fail: loop {
-            if bs.is_list()
-                && v.is_list()
-                && fst_cond(bs.list(), e)
-            {
+            if bs.is_list() && v.is_list() && fst_cond(bs.list(), e) {
                 // Tail "call" optimization:
                 // Basically in a traditional "tail call" position the last operation is a "return"
                 // In our case that's a %{leave-scope}
@@ -509,14 +505,14 @@ fn b_locals(e: &mut Eval) -> bool {
             let mut lss = vec![];
             for l in ls.iter().rev() {
                 let Val::Sym(l) = l else {
-                    eprintln!("Invalid local: {:?}", l);
+                    eprintln!("Invalid local: {:?}", Value(&e.sym_table, l));
                     return false;
                 };
                 lss.push(l.clone());
             }
 
             for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-                scope.insert(*l, Ref::new(Vals::from([v.into()])));
+                scope.insert(*l, Slot::Val(v.into_sharable()));
             }
 
             true
@@ -533,12 +529,17 @@ fn b_define(e: &mut Eval) -> bool {
                 return false;
             };
             for i in 0..(ds.len() / 2) {
-                let kv = [&ds[i * 2], &ds[i * 2 + 1]];
-                let [Val::Sym(k), Val::Quote(v)] = kv else {
-                    eprintln!("Invalid definition: {:?} {:?}", &kv[0], &kv[1]);
+                let [k, v] = [&ds[i * 2], &ds[i * 2 + 1]];
+                if !(k.is_sym() && v.is_list()) {
+                    eprintln!(
+                        "Invalid definition: {:?} {:?}",
+                        Value(&e.sym_table, &k),
+                        Value(&e.sym_table, &v)
+                    );
                     return false;
-                };
-                scope.insert(*k, Ref::new(v.clone()));
+                }
+                // TODO: We could avoid the clone here
+                scope.insert(k.sym(), Slot::Quote(v.clone().into_list_ref()));
             }
             true
         },
