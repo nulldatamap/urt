@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::eval::{eval, trace};
+use crate::eval::{eval, trace, ContView};
 use crate::parser::parse;
 use crate::val::{Program, SymbolTable, Val, Vals, Values};
 
@@ -13,7 +13,7 @@ fn evals<'a>(program: &'a str, stack: &'a str) {
         Err(e) => {
             panic!(
                 "Evaluation failed:\n{:?} | {:?}",
-                Program(&e.sym_table, &e.program),
+                ContView(&e.sym_table, &e.program),
                 Values(&e.sym_table, &e.stack)
             );
         }
@@ -32,16 +32,7 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
             got,
         ),
         Err(e) => {
-            let mut matches = false;
-            if e.program.len() >= p0.len() {
-                matches = true;
-                for (x0, x1) in e.program.iter().rev().zip(p0.iter().rev()) {
-                    if x0 != x1 {
-                        matches = false;
-                        break;
-                    }
-                }
-            }
+            let mut matches = e.program.iter().eq(p0.iter());
             let res = e.get_stack();
             if matches {
                 matches = res == exp0;
@@ -51,7 +42,7 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
                 "Unexpected program fail state!\nExpected: {:?} | {:?}\nGot: {:?} | {:?}",
                 Program(&e.sym_table, &p0),
                 Program(&e.sym_table, &res),
-                Program(&e.sym_table, &e.program),
+                ContView(&e.sym_table, &e.program),
                 Values(&e.sym_table, &e.stack)
             );
         }

@@ -422,7 +422,7 @@ fn b_quote(e: &mut Eval) -> bool {
 fn b_unquote(e: &mut Eval) -> bool {
     e.arity(|e, [x]| {
         if x.is_list() {
-            e.program.extend(x.into_list());
+            e.program.extend(x.into_list_ref());
             true
         } else {
             e.push(x);
@@ -435,9 +435,9 @@ fn b_choose(e: &mut Eval) -> bool {
     e.arity(|e, [t, f, c]|
         if t.is_list() && f.is_list() {
             if c.is_truthy() {
-                e.program.extend(t.into_list());
+                e.program.extend(t.into_list_ref());
             } else {
-                e.program.extend(f.into_list());
+                e.program.extend(f.into_list_ref());
             }
             true
         }
@@ -470,7 +470,7 @@ where
                 // Since there's no residual program between the active scope and the parent scope
                 // We can safely just merge the two scopes at scope introduction time and then elide
                 // the %{leave-scope}. This even works for non-identical scopes!
-                let in_tail_pos = e.program.back() == Some(&Val::Sym(LEAVE_SCOPE_SYM));
+                let in_tail_pos = e.program.in_tail_position();
                 let mut scope = if in_tail_pos {
                     let Some(s) = e.lexicon.pop() else {
                         eprintln!("Invalid scope!");
@@ -486,9 +486,9 @@ where
 
                 e.lexicon.push(scope);
                 if !in_tail_pos {
-                    e.program.push_back(Val::Sym(LEAVE_SCOPE_SYM));
+                    e.program.leave_scope();
                 }
-                e.program.extend(v.into_list());
+                e.program.extend(v.into_list_ref());
 
                 return true;
             } else {

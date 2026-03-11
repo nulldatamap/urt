@@ -1,5 +1,5 @@
 use crate::builtins;
-use crate::val::{Program, Sym, SymbolTable, Val, Vals, Values};
+use crate::val::{Program, Sym, SymbolTable, Val, Vals, Value, Values, LEAVE_SCOPE_SYM, VAL_LEAVE_SCOPE};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Formatter, Write};
@@ -82,6 +82,14 @@ impl ValOrRef {
         }
     }
 
+    pub fn into_list_ref(self) -> Ref {
+        match self {
+            ValOrRef::Val(Val::Quote(vs)) => Ref::new(vs),
+            ValOrRef::Ref(r) => r,
+            _ => panic!("Tried to get list from {:?}", self)
+        }
+    }
+
     pub fn list_mut(&mut self) -> &mut Vals {
         match self {
             ValOrRef::Val(Val::Quote(vs)) => vs,
@@ -123,11 +131,199 @@ impl Into<Val> for ValOrRef {
     }
 }
 
+#[derive(Debug)]
+pub enum Continuation {
+    Vals(Vals),
+    Chunks(Vec<Cont>)
+}
+
+pub enum ContinuationIter<'a> {
+    Vals(std::collections::vec_deque::Iter<'a, Val>),
+    Chunks(std::slice::Iter<'a, Cont>, Option<&'a Vals>, usize),
+}
+
+impl<'a> Iterator for ContinuationIter<'a> {
+    type Item = &'a Val;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Vals(it) => it.next(),
+            Self::Chunks(it, n, i) => {
+                let mut new_n = None;
+                let r;
+                if let Some(vs) = n {
+                    r = Some(&vs[*i]);
+
+                    if *i == 0 {
+                        new_n = Some(None);
+                    } else {
+                        *i -= 1;
+                    }
+                } else {
+                    if let Some(c) = it.next() {
+                        match c {
+                            Cont::LeaveScope => r = Some(&VAL_LEAVE_SCOPE),
+                            Cont::Ref(vs, i) => {
+                                r = Some(&vs[*i]);
+
+                                if *i > 0 {
+                                    new_n = Some(Some(vs.as_ref()));
+                                }
+                            }
+                        }
+                    } else {
+                        r = None;
+                    }
+                }
+                if let Some(new_n) = new_n {
+                    *n = new_n;
+                }
+                r
+            }
+        }
+    }
+}
+
+impl Continuation {
+    fn is_empty(&self) -> bool {
+        match self {
+            Continuation::Vals(vs) => vs.is_empty(),
+            Continuation::Chunks(cs) => cs.is_empty(),
+        }
+    }
+
+    pub(crate) fn extend(&mut self, next: Ref) {
+        if next.len() == 0 {
+            return
+        }
+
+        match self {
+            Self::Chunks(cs) => {
+                let i = next.len() - 1;
+                cs.push(Cont::Ref(next, i));
+            },
+            Self::Vals(vs) => {
+                vs.extend(next.iter().cloned())
+            }
+        }
+    }
+
+    pub fn leave_scope(&mut self) {
+        match self {
+            Self::Vals(vs) => {
+                vs.push_back(VAL_LEAVE_SCOPE.clone());
+            }
+            Self::Chunks(cs) => {
+                cs.push(Cont::LeaveScope);
+            }
+        }
+    }
+
+    pub fn in_tail_position(&self) -> bool {
+        match self {
+            Self::Vals(vs) => vs.back() == Some(&VAL_LEAVE_SCOPE),
+            Self::Chunks(cs) => {
+                let Some(head) = cs.last() else {
+                    return false
+                };
+                match head {
+                    Cont::LeaveScope => true,
+                    Cont::Ref(vs, i) => {
+                        &vs[*i] == &VAL_LEAVE_SCOPE
+                    }
+                }
+            }
+        }
+    }
+
+    fn undo(&mut self, v: Val) {
+        match self {
+            Continuation::Vals(vs) => vs.push_back(v),
+            Continuation::Chunks(cs) => {
+                // TODO: Could optimize the case where we're undoing a chuck
+                cs.push(Cont::Ref(Ref::new([v].into()), 0));
+            }
+        }
+    }
+
+    fn step(&mut self) -> Option<Val> {
+        let r = match self {
+            Self::Vals(vs) => vs.pop_back(),
+            Self::Chunks(cs) => {
+                let Some(head) = cs.last_mut() else {
+                    return None
+                };
+                match head {
+                    Cont::LeaveScope => {
+                        _ = cs.pop();
+                        Some(Val::Sym(LEAVE_SCOPE_SYM))
+                    },
+                    Cont::Ref(vs, i) => {
+                        let r = vs[*i].clone();
+                        if *i == 0 {
+                            _ = cs.pop();
+                        } else {
+                            *i -= 1;
+                        }
+                        Some(r)
+                    }
+                }
+            }
+        };
+        r
+    }
+
+    pub fn iter(&self) -> ContinuationIter {
+        match self {
+            Continuation::Vals(vs) => ContinuationIter::Vals(vs.iter()),
+            Continuation::Chunks(cs) => ContinuationIter::Chunks(cs.iter(), None, 0),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Cont {
+    LeaveScope,
+    Ref(Ref, usize),
+}
+
+pub struct ContView<'a>(pub &'a SymbolTable, pub &'a Continuation);
+
+impl<'a> fmt::Debug for ContView<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.1 {
+            Continuation::Vals(vs) => Program(self.0, vs).fmt(f),
+            Continuation::Chunks(cs) => {
+                let start = cs.iter().rposition(|x| matches!(x, Cont::LeaveScope)).map(|x| x + 1).unwrap_or(0);
+                let mut first = true;
+                if start > 0 {
+                    write!(f, "...")?;
+                }
+                for c in &cs[start..] {
+                    if !first {
+                        write!(f, " ")?;
+                    }
+                    match c {
+                        Cont::LeaveScope => unreachable!(),
+                        Cont::Ref(v, i) => {
+                            for v in v.iter().take(*i) {
+                                Value(self.0, v).fmt(f)?;
+                            }
+                        }
+                    }
+                    first = false;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 pub struct Eval {
     builtins: HashMap<Sym, Builtin>,
     pub(crate) sym_table: SymbolTable,
     pub(crate) lexicon: Vec<HashMap<Sym, Ref>>,
-    pub(crate) program: Vals,
+    pub(crate) program: Continuation,
     pub(crate) stack: Vec<ValOrRef>,
 }
 
@@ -156,7 +352,7 @@ pub fn trace(program: Vals, t: SymbolTable) -> Result<Vals, Eval> {
         }
         println!(
             "{:?} | {:?}\t\t{}",
-            Program(&e.sym_table, &e.program),
+            ContView(&e.sym_table, &e.program),
             Values(&e.sym_table, &e.stack),
             scopes_s
         )
@@ -172,11 +368,13 @@ pub fn trace(program: Vals, t: SymbolTable) -> Result<Vals, Eval> {
 impl Eval {
     pub(crate) fn new(program: Vals, mut t : SymbolTable) -> Eval {
         let builtins = builtins::builtins(&mut t);
+        let n = program.len() - 1;
+        let cont = Continuation::Chunks(vec![Cont::Ref(Rc::new(program), n)]);
         Eval {
             sym_table: t,
             builtins,
             lexicon: vec![],
-            program,
+            program: cont,
             stack: vec![],
         }
     }
@@ -209,7 +407,7 @@ impl Eval {
     fn eval_sym(&mut self, x: Sym) -> bool {
         for m in self.lexicon.iter().rev() {
             if let Some(v) = m.get(&x) {
-                self.program.extend(v.iter().cloned());
+                self.program.extend(v.clone());
                 return true;
             }
         }
@@ -222,7 +420,7 @@ impl Eval {
     }
 
     pub(crate) fn step(&mut self) -> bool {
-        let Some(head) = self.program.pop_back() else {
+        let Some(head) = self.program.step() else {
             return false;
         };
 
@@ -230,7 +428,7 @@ impl Eval {
             Val::Sym(x) => {
                 let ok = self.eval_sym(x);
                 if !ok {
-                    self.program.push_back(Val::Sym(x));
+                    self.program.undo(Val::Sym(x));
                 }
                 ok
             }

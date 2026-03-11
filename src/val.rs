@@ -58,6 +58,7 @@ pub enum Val {
 pub const VAL_TRUE: Val = Val::Int(1);
 pub const VAL_FALSE: Val = Val::Int(0);
 pub const VAL_EMPTY: Val = Val::Quote(VecDeque::new());
+pub const VAL_LEAVE_SCOPE: Val = Val::Sym(LEAVE_SCOPE_SYM);
 
 impl Val {
     pub fn is_int(&self) -> bool {
