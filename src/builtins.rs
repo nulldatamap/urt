@@ -1,9 +1,9 @@
-use crate::eval::{Builtin, Eval, Ref, Slot, Value};
+use crate::eval::{Builtin, Eval, Slot, Value};
 use crate::val::{
-    INT_SYM, KEYWORD_SYM, LEAVE_SCOPE_SYM, LIST_SYM, Program, SYMBOL_SYM, Sym, SymbolTable,
-    VAL_FALSE, VAL_TRUE, Val, Vals,
+    Sym, SymbolTable, Val, Vals, INT_SYM, KEYWORD_SYM,
+    LIST_SYM, SYMBOL_SYM, VAL_FALSE, VAL_TRUE,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 pub fn builtins(t: &mut SymbolTable) -> HashMap<Sym, Builtin> {
     let mut b = HashMap::<Sym, Builtin>::new();
@@ -205,8 +205,8 @@ macro_rules! b_typed {
 }
 
 #[inline(always)]
-fn index_helper(i0: i64, vs: &Vals, allow_end: bool) -> Option<usize> {
-    let n = vs.len() as i64;
+fn index_helper(i0: i64, n0 : usize, allow_end: bool) -> Option<usize> {
+    let n = n0 as i64;
     let i = if i0 < 0 {
         if i0 == -1 && n == 0 && allow_end {
             0
@@ -218,7 +218,7 @@ fn index_helper(i0: i64, vs: &Vals, allow_end: bool) -> Option<usize> {
     };
 
     if i < 0 || (i >= n) && !(allow_end && i == n) {
-        eprintln!("Index out of bounds: {} but length was {}", i0, vs.len());
+        eprintln!("Index out of bounds: {} but length was {}", i0, n0);
         return None;
     }
     Some(i as usize)
@@ -226,7 +226,7 @@ fn index_helper(i0: i64, vs: &Vals, allow_end: bool) -> Option<usize> {
 
 b_typed!(
     b_length(e, vs) if vs.is_list() => {
-        e.push(Val::Int(vs.list().len() as i64));
+        e.push(Val::Int(vs.len() as i64));
     }
 
     b_append(e, ls, rs) if ls.is_list() && rs.is_list() => {
@@ -245,77 +245,77 @@ b_typed!(
     }
 
     b_head(e, vs) if vs.is_list() => {
-        if vs.list().len() == 0 {
+        if vs.len() == 0 {
             eprintln!("Can't use `head` on an empty list");
             e.push(vs);
             return false
         }
 
-        e.push(vs.list().front().unwrap().clone());
+        e.push(vs.iter().next().unwrap().clone());
     }
 
     b_tail(e, vs) if vs.is_list() => {
-        if vs.list().len() == 0 {
+        if vs.len() == 0 {
             eprintln!("Can't use `tail` on an empty list");
             e.push(vs);
             return false
         }
-        vs.list_mut().pop_front();
+        vs.pop_front();
         e.push(vs);
     }
 
     b_last(e, vs) if vs.is_list() => {
-        if vs.list().len() == 0 {
+        if vs.len() == 0 {
             eprintln!("Can't use `head` on an empty list");
             e.push(vs);
             return false
         }
 
-        e.push(vs.list().back().unwrap().clone());
+        e.push(vs.iter().last().unwrap().clone());
     }
 
     b_init(e, vs) if vs.is_list() => {
-        if vs.list().len() == 0 {
+        if vs.len() == 0 {
             eprintln!("Can't use `tail` on an empty list");
             e.push(vs);
             return false
         }
-        vs.list_mut().pop_back();
+        vs.pop_back();
         e.push(vs);
     }
 
     b_head_tail(e, vs) if vs.is_list() => {
-        if vs.list().len() == 0 {
+        if vs.len() == 0 {
             eprintln!("Can't use `head-tail` on an empty list");
             e.push(vs);
             return false
         }
 
-        let h = vs.list_mut().pop_front().unwrap();
-        e.stack.extend([vs, h.into()]);
+        let h = vs.pop_front().unwrap().unwrap_or_else(|x| x.clone());
+        e.stack.extend([vs, h]);
     }
 
     b_last_init(e, vs) if vs.is_list() => {
-        if vs.list().len() == 0 {
+        if vs.len() == 0 {
             eprintln!("Can't use `head-tail` on an empty list");
             e.push(vs);
             return false
         }
 
-        let h = vs.list_mut().pop_back().unwrap();
+        let h = vs.pop_back().unwrap().unwrap_or_else(|x| x.clone());
         e.stack.extend([vs, h.into()]);
     }
 
     b_nth(e, i0, vs) if i0.is_int() && vs.is_list() => {
-        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+        let Some(i) = index_helper(i0.int(), vs.len(), false) else {
             e.stack.extend([vs, i0]);
             return false
         };
-        e.push(vs.list()[i].clone());
+        e.push(vs.nth(i).clone());
     }
 
     b_set_nth(e, i0, v, vs) if i0.is_int() && vs.is_list() => {
-        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+        let Some(i) = index_helper(i0.int(), vs.len(), false) else {
             e.stack.extend([vs, v, i0]);
             return false
         };
@@ -324,7 +324,7 @@ b_typed!(
     }
 
     b_insert_before(e, i0, v, vs) if i0.is_int() && vs.is_list() => {
-        let Some(i) = index_helper(i0.int(), vs.list(), true) else {
+        let Some(i) = index_helper(i0.int(), vs.len(), true) else {
             e.stack.extend([vs, v, i0]);
             return false
         };
@@ -333,7 +333,7 @@ b_typed!(
     }
 
     b_remove_nth(e, i0, vs) if i0.is_int() && vs.is_list() => {
-        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+        let Some(i) = index_helper(i0.int(), vs.len(), false) else {
             e.stack.extend([vs, i0]);
             return false
         };
@@ -342,7 +342,7 @@ b_typed!(
     }
 
     b_swap_remove_nth(e, i0, vs) if i0.is_int() && vs.is_list() => {
-        let Some(i) = index_helper(i0.int(), vs.list(), false) else {
+        let Some(i) = index_helper(i0.int(), vs.len(), false) else {
             e.stack.extend([vs, i0]);
             return false
         };
@@ -350,8 +350,8 @@ b_typed!(
         e.push(vs);
     }
 
-    b_concat(e, vs) if vs.is_list() && vs.list().iter().all(|x| x.is_list()) => {
-        let size = vs.list().iter().map(|x| x.list().len()).sum();
+    b_concat(e, vs) if vs.is_list() && vs.iter().all(|x| x.is_list()) => {
+        let size = vs.iter().map(|x| x.len()).sum();
         let mut r = Vals::with_capacity(size);
         r.extend(vs.into_list().into_iter().flat_map(|v| {
             v.into_list()
@@ -360,17 +360,16 @@ b_typed!(
     }
 
      b_slice(e, from, to, vs) if from.is_int() && to.is_int() && vs.is_list() => {
-         let (Some(i), Some(j)) = (index_helper(from.int(), vs.list(), true), index_helper(to.int(), vs.list(), true)) else {
+         let (Some(i), Some(j)) = (index_helper(from.int(), vs.len(), true), index_helper(to.int(), vs.len(), true)) else {
              e.stack.extend([vs, to, from]);
              return false
          };
-         if i > j || (i > 0 && vs.list().len() == 0) {
+         if i > j || (i > 0 && vs.len() == 0) {
              eprintln!("Invalid slice range");
              e.stack.extend([vs, to, from]);
              return false
          }
-         _ = vs.list_mut().drain(j..);
-         _ = vs.list_mut().drain(..i);
+         vs.slice(i, j);
          e.push(vs);
      }
 );
@@ -454,12 +453,12 @@ fn b_leave_scope(e: &mut Eval) -> bool {
 #[inline(always)]
 fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
 where
-    F: FnOnce(&Vals, &Eval) -> bool,
-    G: FnOnce(&Vals, &mut HashMap<Sym, Slot>, &mut Eval) -> bool,
+    F: FnOnce(&Val, &Eval) -> bool,
+    G: FnOnce(Val, &mut HashMap<Sym, Slot>, &mut Eval) -> Option<Val>,
 {
-    e.arity(|e, [bs, v]| {
+    e.arity(|e, [mut bs, v]| {
         'fail: loop {
-            if bs.is_list() && v.is_list() && fst_cond(bs.list(), e) {
+            if bs.is_list() && v.is_list() && fst_cond(&bs, e) {
                 // Tail "call" optimization:
                 // Basically in a traditional "tail call" position the last operation is a "return"
                 // In our case that's a %{leave-scope}
@@ -476,7 +475,8 @@ where
                 } else {
                     HashMap::new()
                 };
-                if !build_scope(bs.list(), &mut scope, e) {
+                if let Some(restored_bs) = build_scope(bs, &mut scope, e) {
+                    bs = restored_bs;
                     break 'fail;
                 }
 
@@ -506,7 +506,7 @@ fn b_locals(e: &mut Eval) -> bool {
             for l in ls.iter().rev() {
                 let Val::Sym(l) = l else {
                     eprintln!("Invalid local: {:?}", Value(&e.sym_table, l));
-                    return false;
+                    return Some(ls)
                 };
                 lss.push(l.clone());
             }
@@ -515,7 +515,7 @@ fn b_locals(e: &mut Eval) -> bool {
                 scope.insert(*l, Slot::Val(v.into_sharable()));
             }
 
-            true
+            None
         },
     )
 }
@@ -525,23 +525,24 @@ fn b_define(e: &mut Eval) -> bool {
         |ds, _e| ds.len() % 2 == 0,
         |ds, scope, e| {
             if ds.len() % 2 == 1 {
-                eprintln!("Invalid definitions: {{{:?}}}", Program(&e.sym_table, ds));
-                return false;
+                eprintln!("Invalid definitions: {{{:?}}}", Value(&e.sym_table, &ds));
+                return Some(ds)
             };
             for i in 0..(ds.len() / 2) {
-                let [k, v] = [&ds[i * 2], &ds[i * 2 + 1]];
+                let k = ds.nth(i * 2);
+                let v = ds.nth(i * 2 + 1);
                 if !(k.is_sym() && v.is_list()) {
                     eprintln!(
                         "Invalid definition: {:?} {:?}",
                         Value(&e.sym_table, &k),
                         Value(&e.sym_table, &v)
                     );
-                    return false;
+                    return Some(ds)
                 }
                 // TODO: We could avoid the clone here
                 scope.insert(k.sym(), Slot::Quote(v.clone().into_list_ref()));
             }
-            true
+            None
         },
     )
 }

@@ -1,4 +1,4 @@
-use crate::eval::{Eval, eval, Program, ContView};
+use crate::eval::Eval;
 use crate::parser::parse;
 use crate::val::{SymbolTable, Vals, Values};
 

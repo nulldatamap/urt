@@ -1,6 +1,8 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
+use std::fmt::Formatter;
+use std::ops::Range;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -51,7 +53,61 @@ impl SymbolTable {
     }
 }
 
-pub type Ref = Rc<Vals>;
+#[derive(Clone, Debug)]
+pub struct Ref {
+    vals: Rc<Vals>,
+    range: Range<usize>,
+}
+
+impl Ref {
+    pub fn new(vals: Vals) -> Ref {
+        let n = vals.len();
+        Ref {
+            vals: Rc::new(vals),
+            range: 0..n,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.range.len()
+    }
+
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<Val> {
+        self.vals.range(self.range.clone())
+    }
+
+    pub fn into_vals(self) -> Vals {
+        match Rc::try_unwrap(self.vals) {
+            Ok(vs) => vs,
+            Err(r) => r.as_ref().range(self.range).cloned().collect::<Vals>(),
+        }
+    }
+
+    pub fn pop_front(&mut self) -> Option<&Val> {
+        if self.range.is_empty() {
+            None
+        } else {
+            let v = &self.vals[self.range.start];
+            self.range.start += 1;
+            Some(v)
+        }
+    }
+
+    pub fn pop_back(&mut self) -> Option<&Val> {
+        if self.range.is_empty() {
+            None
+        } else {
+            let v = &self.vals[self.range.end - 1];
+            self.range.end -= 1;
+            Some(v)
+        }
+    }
+
+    pub fn slice(&mut self, range: Range<usize>) {
+        self.range.start += range.start;
+        self.range.end = self.range.start + range.len();
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum Val {
@@ -70,7 +126,17 @@ impl PartialEq for Val {
             (Self::Kw(x), Self::Kw(y)) => *x == *y,
             _ => {
                 if self.is_list() && other.is_list() {
-                    self.list() == other.list()
+                    if self.len() != other.len() {
+                        return false;
+                    }
+                    match (self, other) {
+                        (Self::List(l0), Self::List(l1)) => *l0 == *l1,
+                        (Self::Ref(r), Self::List(l)) | (Self::List(l), Self::Ref(r)) => {
+                            r.iter().eq(l.iter())
+                        }
+                        (Self::Ref(r0), Self::Ref(r1)) => r0.iter().eq(r1.iter()),
+                        _ => unreachable!(),
+                    }
                 } else {
                     false
                 }
@@ -101,18 +167,63 @@ impl Val {
         matches!(self, Val::Kw(_))
     }
 
-    pub fn list(&self) -> &Vals {
+    pub fn len(&self) -> usize {
         match self {
-            Val::List(l) => l,
-            Val::Ref(r) => r.as_ref(),
-            _ => panic!("{:?} is not a list", self),
+            Val::List(l) => l.len(),
+            Val::Ref(r) => r.len(),
+            _ => panic!("Can't get the length of a non-list: {:?}", self),
+        }
+    }
+
+    pub fn pop_front(&mut self) -> Option<Result<Val, &Val>> {
+        match self {
+            Val::List(vs) => vs.pop_front().map(Ok),
+            Val::Ref(r) => r.pop_front().map(Err),
+            _ => panic!("Can't `pop_front` on a non-list: {:?}", self),
+        }
+    }
+
+    pub fn pop_back(&mut self) -> Option<Result<Val, &Val>> {
+        match self {
+            Val::List(vs) => vs.pop_back().map(Ok),
+            Val::Ref(r) => r.pop_back().map(Err),
+            _ => panic!("Can't `pop_back` on a non-list: {:?}", self),
+        }
+    }
+
+    pub fn slice(&mut self, from: usize, to: usize) {
+        match self {
+            Val::List(vs) => {
+                vs.drain(to..);
+                vs.drain(..from);
+            },
+            Val::Ref(r) => {
+                r.slice(from..to);
+            },
+            _ => panic!("Can't `slice` on a non-list: {:?}", self),
+        }
+    }
+
+    pub fn nth(&self, i : usize) -> &Val {
+        match self {
+            Val::List(vs) => &vs[i],
+            Val::Ref(r) => &r.vals[r.range.start + i],
+            _ => panic!("Can't index into a non-list: {:?}", self)
+        }
+    }
+
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<Val> {
+        match self {
+            Val::List(l) => l.iter(),
+            Val::Ref(r) => r.iter(),
+            _ => panic!("Can't iterate over a non-list: {:?}", self),
         }
     }
 
     pub fn into_list(self) -> Vals {
         match self {
             Val::List(vs) => vs,
-            Val::Ref(r) => r.as_ref().clone(),
+            Val::Ref(r) => r.into_vals(),
             _ => panic!("Tried to get list from {:?}", self),
         }
     }
@@ -128,7 +239,7 @@ impl Val {
     pub fn into_sharable(self) -> Self {
         match self {
             Val::List(vs) => Val::Ref(Ref::new(vs)),
-            v => v
+            v => v,
         }
     }
 
@@ -139,20 +250,20 @@ impl Val {
                 let Val::Ref(r) = std::mem::replace(self, Val::Int(0)) else {
                     unreachable!()
                 };
-                match Rc::try_unwrap(r) {
-                    Ok(vs) => {
-                        *self = Val::List(vs);
-                        let Val::List(vs) = self else { unreachable!() };
-                        vs
-                    }
-                    Err(r) => {
-                        *self = Val::List(r.as_ref().clone());
-                        let Val::List(r) = self else { unreachable!() };
-                        r
-                    }
-                }
+                let vs = r.into_vals();
+                *self = Val::List(vs);
+                let Val::List(vs) = self else { unreachable!() };
+                vs
             }
             _ => panic!("Tried to get list from {:?}", self),
+        }
+    }
+
+    pub fn list_or_ref_mut(&mut self) -> Result<&mut Vals, &mut Ref> {
+        match self {
+            Val::List(vs) => Ok(vs),
+            Val::Ref(r) => Err(r),
+            _ => panic!("Tried to get list/ref from {:?}", self),
         }
     }
 
@@ -219,9 +330,34 @@ pub type Vals = VecDeque<Val>;
 //     }
 // }
 //
+
+pub struct RefProgram<'a>(pub &'a SymbolTable, pub &'a Ref);
 pub struct Program<'a>(pub &'a SymbolTable, pub &'a Vals);
 pub struct Values<'a>(pub &'a SymbolTable, pub &'a [Val]);
 pub struct Value<'a>(pub &'a SymbolTable, pub &'a Val);
+
+impl<'a> fmt::Debug for RefProgram<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let start = self
+            .1
+            .iter()
+            .rposition(|x| matches!(x, Val::Sym(k) if *k == LEAVE_SCOPE_SYM))
+            .map(|x| x + 1)
+            .unwrap_or(0);
+        let mut first = true;
+        if start > 0 {
+            write!(f, "... ")?;
+        }
+        for v in self.1.iter().skip(start) {
+            if !first {
+                write!(f, " ")?;
+            }
+            first = false;
+            write!(f, "{:?} ", Value(self.0, v))?;
+        }
+        Ok(())
+    }
+}
 
 impl<'a> fmt::Debug for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -230,7 +366,7 @@ impl<'a> fmt::Debug for Value<'a> {
             Val::Sym(s) => write!(f, "{}", self.0.str(*s)),
             Val::Kw(s) => write!(f, ":{}", self.0.str(*s)),
             Val::List(vals) => Program(self.0, vals).fmt(f),
-            Val::Ref(vals) => Program(self.0, vals.as_ref()).fmt(f),
+            Val::Ref(vals) => RefProgram(self.0, vals).fmt(f),
         }
     }
 }
