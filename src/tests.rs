@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use crate::eval::{ContView, eval};
+use crate::eval::{eval, ContView};
 use crate::parser::parse;
-use crate::val::{Program, SymbolTable, Val, Vals, Values};
+use crate::val::{Program, SymbolTable, Vals, Values};
 
 fn evals<'a>(program: &'a str, stack: &'a str) {
     let mut t = SymbolTable::new();
@@ -385,4 +385,23 @@ fn list() {
     // evals("build-list {}", "{}");
     // evals("build-list {+ 1 2  + 2 2  + 3 3}", "{3 4 6}");
     // evals("define { iota { choose {} {iota} > 0 dup - 1 } } { iota 3 }", "{0 1 2}");
+}
+
+#[test]
+fn list_ref_specialization() {
+    // `push-back`/`push-front` is used to force the Ref list to become a List on the stack
+    evals("head { my-ref based list }", "my-ref");
+    evals("head push-back 1 { my-ref based list }", "my-ref");
+
+    evals("last { my-ref based list }", "list");
+    evals("last push-front 1 { my-ref based list }", "list");
+
+    evals("init { my-ref based list }", "{ my-ref based }");
+    evals("init push-back 1 { my-ref based list }", "{ my-ref based list }");
+
+    evals("tail { my-ref based list }", "{ based list }");
+    evals("tail push-front 1 { my-ref based list }", "{ my-ref based list }");
+
+    evals("slice 1 3 { my-ref based long list }", "{ based long }");
+    evals("slice 1 3 push-back 1 { my-ref based long list }", "{ based long }");
 }
