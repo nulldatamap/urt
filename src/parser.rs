@@ -2,12 +2,14 @@ use crate::val::*;
 
 pub fn parse(input: &str, t: &mut SymbolTable) -> Result<Vals, String> {
     let mut chars = input.chars().peekable();
-    parse_vals(&mut chars, t, false)
+    let mut scope = Vec::new();
+    parse_vals(&mut chars, t, &mut scope, false)
 }
 
 fn parse_vals<I>(
     chars: &mut std::iter::Peekable<I>,
     t: &mut SymbolTable,
+    scope: &mut Vec<usize>,
     stop_on_close: bool,
 ) -> Result<Vals, String>
 where
@@ -19,7 +21,7 @@ where
         match ch {
             '{' => {
                 chars.next(); // consume '{'
-                let inner = parse_vals(chars, t, true)?;
+                let inner = parse_vals(chars, t, scope, true)?;
                 vals.push_back(Val::Ref(Ref::new(inner)));
             }
             '}' => {
@@ -34,7 +36,7 @@ where
                 chars.next(); // skip whitespace
             }
             _ => {
-                vals.push_back(parse_atom(chars, t)?);
+                vals.push_back(parse_atom(chars, t, scope)?);
             }
         }
     }
@@ -46,7 +48,7 @@ where
     }
 }
 
-fn parse_atom<I>(chars: &mut std::iter::Peekable<I>, t: &mut SymbolTable) -> Result<Val, String>
+fn parse_atom<I>(chars: &mut std::iter::Peekable<I>, t: &mut SymbolTable, scope: &mut Vec<usize>) -> Result<Val, String>
 where
     I: Iterator<Item = char>,
 {
@@ -70,7 +72,7 @@ where
 
     let mut chs = buf.chars();
     if is_kw {
-        Ok(Val::Kw(t.intern(buf)))
+        Ok(Val::Kw(t.intern(buf.into())))
     } else {
         if buf.starts_with('-') && buf.len() > 1 {
             _ = chs.next();
@@ -83,7 +85,7 @@ where
                 x
             })?))
         } else {
-            Ok(Val::Sym(t.intern(buf)))
+            Ok(Val::Sym(t.intern(LexicalName::scoped(buf, &scope))))
         }
     }
 }

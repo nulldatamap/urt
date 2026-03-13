@@ -2,6 +2,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::Formatter;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -13,9 +14,36 @@ pub const LIST_SYM: Sym = Sym(3);
 pub const SYMBOL_SYM: Sym = Sym(4);
 pub const KEYWORD_SYM: Sym = Sym(5);
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub(crate) struct LexicalName {
+    name: String,
+    scope: u64,
+}
+
+impl LexicalName {
+    pub fn scoped<T>(name: T, scope: &[usize]) -> LexicalName where T: ToString {
+        let mut hasher = DefaultHasher::new();
+        scope.hash(&mut hasher);
+        let scope = hasher.finish();
+        LexicalName {
+            name: name.to_string(),
+            scope
+        }
+    }
+}
+
+impl<T> From<T> for LexicalName where T: ToString {
+    fn from(value: T) -> Self {
+        LexicalName {
+            name: value.to_string(),
+            scope: 0,
+        }
+    }
+}
+
 pub struct SymbolTable {
     next: u64,
-    symbols: HashMap<String, Sym>,
+    symbols: HashMap<LexicalName, Sym>,
 }
 
 impl SymbolTable {
@@ -24,15 +52,15 @@ impl SymbolTable {
             next: 1,
             symbols: HashMap::new(),
         };
-        assert_eq!(t.intern("%{leave-scope}".to_string()), LEAVE_SCOPE_SYM);
-        assert_eq!(t.intern("int".to_string()), INT_SYM);
-        assert_eq!(t.intern("list".to_string()), LIST_SYM);
-        assert_eq!(t.intern("symbol".to_string()), SYMBOL_SYM);
-        assert_eq!(t.intern("keyword".to_string()), KEYWORD_SYM);
+        assert_eq!(t.intern("%{leave-scope}".into()), LEAVE_SCOPE_SYM);
+        assert_eq!(t.intern("int".into()), INT_SYM);
+        assert_eq!(t.intern("list".into()), LIST_SYM);
+        assert_eq!(t.intern("symbol".into()), SYMBOL_SYM);
+        assert_eq!(t.intern("keyword".into()), KEYWORD_SYM);
         t
     }
 
-    pub fn intern(&mut self, x: String) -> Sym {
+    pub fn intern(&mut self, x: LexicalName) -> Sym {
         match self.symbols.entry(x) {
             Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
@@ -45,6 +73,10 @@ impl SymbolTable {
     }
 
     pub fn str(&self, x: Sym) -> &str {
+        self.get(x).name.as_str()
+    }
+
+    pub fn get(&self, x: Sym) -> &LexicalName {
         self.symbols
             .iter()
             .find(|kv| *kv.1 == x)

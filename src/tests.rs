@@ -211,6 +211,8 @@ fn scope() {
     fails("define {x 1} {}", "define", " {x 1} {}");
     fails("define {x} {}", "define", " {x} {}");
     fails("x define {x {1}} {}", "x", "");
+
+    fails("define { doit { define { x {3} } { unquote } } } { doit { x } }", "TODO", "TODO");
 }
 
 #[test]

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 pub fn builtins(t: &mut SymbolTable) -> HashMap<Sym, Builtin> {
     let mut b = HashMap::<Sym, Builtin>::new();
     let mut reg = |k: &'static str, f| {
-        b.insert(t.intern(k.to_string()), f);
+        b.insert(t.intern(k.into()), f);
     };
 
     // Stack
