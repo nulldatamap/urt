@@ -5,6 +5,7 @@ pub(crate) use crate::val::{
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Formatter, Write};
+use micromap::Map;
 
 pub type Builtin = fn(&mut Eval) -> bool;
 
@@ -198,10 +199,41 @@ pub(crate) enum Slot {
     Val(Val),
 }
 
+const SMALL_MAP_SIZE: usize = 16;
+
+pub enum LexiconScope {
+    Large(HashMap<Sym, Slot>),
+    Small(Map<Sym, Slot, SMALL_MAP_SIZE>),
+}
+
+impl LexiconScope {
+    pub fn new(max_size: usize) -> LexiconScope {
+        if max_size <= SMALL_MAP_SIZE {
+            Self::Small(Map::new())
+        } else {
+            Self::Large(HashMap::with_capacity(max_size))
+        }
+    }
+
+    pub fn get(&self, x: Sym) -> Option<&Slot> {
+        match self {
+            LexiconScope::Large(m) => m.get(&x),
+            LexiconScope::Small(m) => m.get(&x),
+        }
+    }
+
+    pub fn insert(&mut self, x: Sym, v: Slot) -> Option<Slot> {
+        match self {
+            LexiconScope::Large(m) => m.insert(x, v),
+            LexiconScope::Small(m) => m.insert(x, v),
+        }
+    }
+}
+
 pub struct Eval {
     builtins: HashMap<Sym, Builtin>,
     pub(crate) sym_table: SymbolTable,
-    pub(crate) lexicon: Vec<HashMap<Sym, Slot>>,
+    pub(crate) lexicon: Vec<LexiconScope>,
     pub(crate) program: Continuation,
     pub(crate) stack: Vec<Val>,
 }
@@ -290,7 +322,7 @@ impl Eval {
 
     fn eval_sym(&mut self, x: Sym) -> bool {
         for m in self.lexicon.iter().rev() {
-            if let Some(v) = m.get(&x) {
+            if let Some(v) = m.get(x) {
                 match v {
                     Slot::Quote(v) => self.program.extend(v.clone()),
                     Slot::Val(v) => self.stack.push(v.clone()),

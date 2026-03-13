@@ -7,3 +7,4 @@ edition = "2024"
 debug = true
 
 [dependencies]
+micromap = "0.3.0"

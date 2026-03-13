@@ -236,6 +236,14 @@ impl Val {
         }
     }
 
+    pub fn as_list_ref(&self) -> Ref {
+        match self {
+            Val::List(vs) => Ref::new(vs.clone()),
+            Val::Ref(r) => r.clone(),
+            _ => panic!("Tried to get list from {:?}", self),
+        }
+    }
+
     pub fn into_sharable(self) -> Self {
         match self {
             Val::List(vs) => Val::Ref(Ref::new(vs)),

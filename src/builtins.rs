@@ -1,4 +1,4 @@
-use crate::eval::{Builtin, Eval, Slot, Value};
+use crate::eval::{Builtin, Eval, LexiconScope, Slot, Value};
 use crate::val::{
     Sym, SymbolTable, Val, Vals, INT_SYM, KEYWORD_SYM,
     LIST_SYM, SYMBOL_SYM, VAL_FALSE, VAL_TRUE,
@@ -454,7 +454,7 @@ fn b_leave_scope(e: &mut Eval) -> bool {
 fn scoped_helper<F, G>(e: &mut Eval, fst_cond: F, build_scope: G) -> bool
 where
     F: FnOnce(&Val, &Eval) -> bool,
-    G: FnOnce(Val, &mut HashMap<Sym, Slot>, &mut Eval) -> Option<Val>,
+    G: FnOnce(Val, &mut LexiconScope, &mut Eval) -> Option<Val>,
 {
     e.arity(|e, [mut bs, v]| {
         'fail: loop {
@@ -473,7 +473,7 @@ where
                     };
                     s
                 } else {
-                    HashMap::new()
+                    LexiconScope::new(bs.len() / 2)
                 };
                 if let Some(restored_bs) = build_scope(bs, &mut scope, e) {
                     bs = restored_bs;
@@ -502,17 +502,15 @@ fn b_locals(e: &mut Eval) -> bool {
         e,
         |ls, e| ls.len() <= e.stack.len(),
         |ls, scope, e| {
-            let mut lss = vec![];
             for l in ls.iter().rev() {
-                let Val::Sym(l) = l else {
+                let Val::Sym(_) = l else {
                     eprintln!("Invalid local: {:?}", Value(&e.sym_table, l));
                     return Some(ls)
                 };
-                lss.push(l.clone());
             }
 
-            for (l, v) in lss.iter().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
-                scope.insert(*l, Slot::Val(v.into_sharable()));
+            for (l, v) in ls.iter().rev().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
+                scope.insert(l.sym(), Slot::Val(v.into_sharable()));
             }
 
             None
@@ -540,7 +538,7 @@ fn b_define(e: &mut Eval) -> bool {
                     return Some(ds)
                 }
                 // TODO: We could avoid the clone here
-                scope.insert(k.sym(), Slot::Quote(v.clone().into_list_ref()));
+                scope.insert(k.sym(), Slot::Quote(v.as_list_ref()));
             }
             None
         },
