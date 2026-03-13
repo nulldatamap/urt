@@ -3,9 +3,10 @@ define {
   mod-clamp {
     locals { x } {
       choose
-        { + 100 x }
-        { % x 100 }
-        < x 0
+        { + 100 }
+        {}
+        > 0 dup
+        % x 100
     }
   }
   step {
