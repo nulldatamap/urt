@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use crate::eval::{eval, ContView};
-use crate::parser::parse;
-use crate::val::{Program, SymbolTable, Vals, Values};
+use crate::rt::eval::{eval, ContView};
+use crate::rt::parser::parse;
+use crate::rt::val::{Program, SymbolTable, Vals, Values};
 
 fn evals<'a>(program: &'a str, stack: &'a str) {
     let mut t = SymbolTable::new();

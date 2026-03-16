@@ -1,12 +1,9 @@
-use crate::eval::Eval;
-use crate::parser::parse;
-use crate::val::{SymbolTable, Vals, Values};
+mod rt;
 
-mod builtins;
-mod eval;
-mod parser;
-mod tests;
-mod val;
+use rt::eval::Eval;
+use rt::parser::parse;
+use rt::val::{SymbolTable, Vals, Values};
+
 
 fn main() {
     let mut t = SymbolTable::new();

@@ -1,10 +1,10 @@
-use crate::builtins;
-pub(crate) use crate::val::{
+use crate::rt::builtins;
+pub(crate) use crate::rt::val::{
     Program, Ref, Sym, SymbolTable, Val, Vals, Value, LEAVE_SCOPE_SYM, VAL_LEAVE_SCOPE,
 };
 use std::collections::HashMap;
 use std::fmt;
-use std::fmt::{Formatter, Write};
+use std::fmt::Formatter;
 use micromap::Map;
 
 pub type Builtin = fn(&mut Eval) -> bool;
@@ -144,7 +144,7 @@ impl Continuation {
         }
     }
 
-    pub fn iter(&self) -> ContinuationIter {
+    pub fn iter(&self) -> ContinuationIter<'_> {
         match self {
             Continuation::Vals(vs) => ContinuationIter::Vals(vs.iter()),
             Continuation::Chunks(cs) => ContinuationIter::Chunks(cs.iter(), None),
@@ -153,7 +153,7 @@ impl Continuation {
 }
 
 #[derive(Debug)]
-enum Cont {
+pub enum Cont {
     LeaveScope,
     Ref(Ref),
 }

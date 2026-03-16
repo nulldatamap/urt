@@ -1,5 +1,5 @@
-use crate::eval::{Builtin, Eval, LexiconScope, Slot, Value};
-use crate::val::{
+use crate::rt::eval::{Builtin, Eval, LexiconScope, Slot, Value};
+use crate::rt::val::{
     Sym, SymbolTable, Val, Vals, INT_SYM, KEYWORD_SYM,
     LIST_SYM, SYMBOL_SYM, VAL_FALSE, VAL_TRUE,
 };

@@ -72,7 +72,7 @@ impl Ref {
         self.range.len()
     }
 
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<Val> {
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Val> {
         self.vals.range(self.range.clone())
     }
 
@@ -212,7 +212,7 @@ impl Val {
         }
     }
 
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<Val> {
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Val> {
         match self {
             Val::List(l) => l.iter(),
             Val::Ref(r) => r.iter(),
