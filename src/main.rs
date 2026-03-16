@@ -1,3 +1,6 @@
+#![feature(assert_matches)]
+
+mod analysis;
 mod rt;
 
 use rt::eval::Eval;
@@ -16,11 +19,11 @@ fn main() {
 
     let mut e = Eval::new(program, t);
     while e.step() {
-        println!(
-            "{:?} | {:?}",
-            e.sym_table.show(&e.program),
-            e.sym_table.show(&e.stack)
-        );
+        // println!(
+        //     "{:?} | {:?}",
+        //     e.sym_table.show(&e.program),
+        //     e.sym_table.show(&e.stack)
+        // );
     }
     println!("{:?}", e.sym_table.show(&e.stack));
 }

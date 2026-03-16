@@ -44,6 +44,15 @@ impl SymbolTable {
         }
     }
 
+    pub fn try_get(&self, x: &str) -> Option<Sym> {
+        self.symbols.get(x).cloned()
+    }
+
+    pub fn get(&self, x: &str) -> Sym {
+        self.try_get(x)
+            .expect(&format!("No symbol: `{}` present in the symbol-table!", x))
+    }
+
     pub fn str(&self, x: Sym) -> &str {
         self.symbols
             .iter()
