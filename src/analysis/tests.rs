@@ -6,7 +6,6 @@ use crate::analysis;
 use crate::analysis::{stack_usage, AnalysisError, AnalysisResult, StackUsage};
 use crate::rt::parser::parse;
 use crate::rt::val::SymbolTable;
-use std::assert_matches::assert_matches;
 
 fn analyze(src: &str) -> AnalysisResult {
     let mut t = SymbolTable::new();
@@ -29,14 +28,14 @@ fn stack_basics() {
         matches_usage(src, StackUsage::from_in_out_sizes(0, out));
     }
 
-    assert_matches!(
+    assert!(matches!(
         analyze("drop"),
         Err(AnalysisError::StackMismatch(_, x, y)) if x.is_empty() && y.in_len() == 1
-    );
-    assert_matches!(
+    ));
+    assert!(matches!(
         analyze("swap 1"),
         Err(AnalysisError::StackMismatch(_, x, y)) if x.len() == 1 && y.in_len() == 2
-    );
+    ));
 }
 
 fn matches_usage(src: &str, exp: StackUsage) {
@@ -52,10 +51,17 @@ fn matches_usage(src: &str, exp: StackUsage) {
 
 #[test]
 fn typed() {
-    matches_usage("+ 1 2", stack_usage!(() -- (R:int)));
+    matches_usage("+ 1 2", stack_usage!(() -- (int)));
 
-    assert_matches!(
+    assert!(matches!(
         analyze("+ 1 {}"),
-        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((X:int Y:int) -- (R:int))
-    );
+        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((int int) -- (int))
+    ));
+
+    assert!(matches!(
+        analyze("unquote 1"),
+        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((anycode) -- (eval(0)))
+    ));
+
+    matches_usage("unquote {+ 1} 1", stack_usage!(() -- (int)));
 }

@@ -1,5 +1,3 @@
-#![feature(assert_matches)]
-
 mod analysis;
 mod rt;
 

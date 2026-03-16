@@ -3,13 +3,21 @@ mod tests;
 use crate::analysis::AnalysisError::StackMismatch;
 use crate::rt::eval::{Sym, Val, Vals};
 use crate::rt::val::SymbolTable;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug)]
 pub enum AnalysisError {
     LexicallyUndefinedSymbol(String),
     StackMismatch(String, VirtualStack, StackUsage),
+    TypeMismatch(String, StackUsage, StackUsage),
+    AmbiguousType(VirtualStack, StackUsage),
 }
+
+trait ArrayLikeIter<'a, T: 'a>: Iterator<Item=&'a T> + ExactSizeIterator + DoubleEndedIterator {
+}
+
+impl<'a, T> ArrayLikeIter<'a, T> for std::collections::vec_deque::Iter<'a, T> {}
+impl<'a, T> ArrayLikeIter<'a, T> for std::slice::Iter<'a, T> {}
 
 type Result<T> = std::result::Result<T, AnalysisError>;
 type AnalysisResult = Result<StackUsage>;
@@ -22,6 +30,17 @@ enum BasicType {
     Sym,
     Kw,
     List,
+}
+
+impl BasicType {
+    fn matches(&self, v: &Val) -> bool {
+        match self {
+            BasicType::Int => v.is_int(),
+            BasicType::Sym => v.is_sym(),
+            BasicType::Kw => v.is_kw(),
+            BasicType::List => v.is_list(),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -50,14 +69,7 @@ impl TypeInfo {
 
     fn matches(&self, v: &Val) -> bool {
         match (self, v) {
-            (TypeInfo::Basic(bt), v) => {
-                match bt {
-                    BasicType::Int => v.is_int(),
-                    BasicType::Sym => v.is_sym(),
-                    BasicType::Kw => v.is_kw(),
-                    BasicType::List => v.is_list(),
-                }
-            },
+            (TypeInfo::Basic(bt), v) => bt.matches(v),
             (TypeInfo::HomList(bt), v) => {
                 v.is_list() && v.iter().all(|x| bt.matches(x))
             },
@@ -72,6 +84,7 @@ impl TypeInfo {
 enum StackParam {
     Any,
     Typed(TypeInfo),
+    Eval(usize),
 }
 
 impl StackParam {
@@ -121,21 +134,22 @@ impl StackUsage {
             && self.matches(other)
     }
 
-    fn usage_matches_virtual(su: &[StackParam], other: &[VirtualVal]) -> bool {
+    fn usage_matches_virtual<'a>(su: impl ArrayLikeIter<'a, StackParam>, other: impl ArrayLikeIter<'a, VirtualVal>) -> bool {
+        let su = su.into_iter();
+        let other = other.into_iter();
         su.len() <= other.len()
             && su
-                .iter()
                 .rev()
-                .zip(other.iter().rev())
+                .zip(other.rev())
                 .all(|(x, y)| x.matches_virtual(y))
     }
 
-    fn in_matches_virtual(&self, other: &[VirtualVal]) -> bool {
-        Self::usage_matches_virtual(&self.stack_in, other)
+    fn in_matches_virtual<'a>(&'a self, other: impl ArrayLikeIter<'a, VirtualVal>) -> bool {
+        Self::usage_matches_virtual(self.stack_in.iter(), other)
     }
 
-    fn out_matches_virtual(&self, other: &[VirtualVal]) -> bool {
-        Self::usage_matches_virtual(&self.stack_out, other)
+    fn out_matches_virtual<'a>(&'a self, other: impl ArrayLikeIter<'a, VirtualVal>) -> bool {
+        Self::usage_matches_virtual(self.stack_out.iter(), other)
     }
 
     fn in_len(&self) -> usize {
@@ -187,10 +201,11 @@ enum VirtualVal {
     Virtual(StackParam),
 }
 
-type VirtualStack = Vec<VirtualVal>;
+type VirtualStack = VecDeque<VirtualVal>;
 
 struct Ctx<'a> {
     t: &'a SymbolTable,
+    arguments: Option<Vec<StackParam>>,
     virtual_stack: VirtualStack,
     builtin_info: &'a BuiltinInfo,
     lexical_scope: Vec<HashMap<Sym, LocalInfo>>,
@@ -207,19 +222,25 @@ macro_rules! stack_usage {
     );
     // Params
     (stack_param [$($res:tt)*]) => (vec![$($res)*]);
-    (stack_param [$($res:tt)*] $p:ident : any $($rest:tt)*) => (
+    (stack_param [$($res:tt)*] any $($rest:tt)*) => (
         stack_usage!(stack_param
           [$($res)* StackParam::Any, ]
           $($rest)*
         )
     );
-    (stack_param [$($res:tt)*] $p:ident : $t:ident ($($xs:ident),+) $($rest:tt)*) => (
+    (stack_param [$($res:tt)*] eval($x:literal) $($rest:tt)*) => (
+        stack_usage!(stack_param
+          [$($res)* StackParam::Eval($x), ]
+          $($rest)*
+        )
+    );
+    (stack_param [$($res:tt)*] $t:ident ($($xs:expr),+) $($rest:tt)*) => (
         stack_usage!(stack_param
           [$($res)* StackParam::Typed(stack_usage!(type $t ($($xs),+))), ]
           $($rest)*
         )
     );
-    (stack_param [$($res:tt)*] $p:ident : $t:ident $($rest:tt)*) => (
+    (stack_param [$($res:tt)*] $t:ident $($rest:tt)*) => (
         stack_usage!(stack_param
           [$($res)* StackParam::Typed(stack_usage!(type $t)), ]
           $($rest)*
@@ -229,7 +250,7 @@ macro_rules! stack_usage {
     (type $t:ident) => (
         TypeInfo::$t()
     );
-    (type $t:ident($($xs:ident),+)) => (
+    (type $t:ident($($xs:expr),+)) => (
         TypeInfo::$t($($xs),+)
     );
 }
@@ -249,31 +270,34 @@ fn builtin_info(t: &SymbolTable) -> BuiltinInfo {
     }
 
     reg!(
-        "drop"       (X:any) -- ();
-        "dup"        (X:any) -- (X:any X:any);
-        "swap" (X:any Y:any) -- (Y:any X:any);
+        "drop" (any) -- ();
+        // TODO: have a arg(X) so we can track types across these ops:
+        "dup"  (any) -- (any any);
+        "swap" (any any) -- (any any);
 
-        "+" (X:int Y:int) -- (Z:int);
-        "-" (X:int Y:int) -- (Z:int);
-        "*" (X:int Y:int) -- (Z:int);
-        "/" (X:int Y:int) -- (Z:int);
-        "%" (X:int Y:int) -- (Z:int);
+        "+" (int int) -- (int);
+        "-" (int int) -- (int);
+        "*" (int int) -- (int);
+        "/" (int int) -- (int);
+        "%" (int int) -- (int);
 
-        "="  (X:any Y:any) -- (Z:bool);
-        "<>" (X:any Y:any) -- (Z:bool);
-        "<"  (X:int Y:int) -- (Z:bool);
-        "<=" (X:int Y:int) -- (Z:bool);
-        ">"  (X:int Y:int) -- (Z:bool);
-        ">=" (X:int Y:int) -- (Z:bool);
+        "="  (any any) -- (bool);
+        "<>" (any any) -- (bool);
+        "<"  (int int) -- (bool);
+        "<=" (int int) -- (bool);
+        ">"  (int int) -- (bool);
+        ">=" (int int) -- (bool);
 
-        "true"     () -- (T:bool);
-        "false"    () -- (F:bool);
-        "&&"    (A:any B:any) -- (A_AND_B:any);
-        "||"    (A:any B:any) -- (A_OR_B:any);
-        "not"   (A:any B:any) -- (C:bool);
+        "true"  () -- (bool);
+        "false" () -- (bool);
+        "&&"    (any any) -- (any);
+        "||"    (any any) -- (any);
+        "not"   (any any) -- (bool);
+
+        "unquote" (anycode) -- (eval(0));
 
         "%{leave-scope}" () -- ();
-        "locals" (LS:syms B:anycode) -- (R:eval(B));
+        "locals" (syms anycode) -- (eval(0));
     );
 
     builtin_info
@@ -283,7 +307,8 @@ impl<'a> Ctx<'a> {
     fn new(t: &'a SymbolTable, bi: &'a BuiltinInfo) -> Ctx<'a> {
         Ctx {
             t,
-            virtual_stack: vec![],
+            arguments: None,
+            virtual_stack: VecDeque::new(),
             builtin_info: bi,
             lexical_scope: vec![],
         }
@@ -304,18 +329,44 @@ impl<'a> Ctx<'a> {
     }
 
     fn uses(&mut self, s: Sym, stack_usage: &StackUsage) -> Result<()> {
-        if !stack_usage.in_matches_virtual(&self.virtual_stack) {
+
+        if stack_usage.in_len() > self.virtual_stack.len()
+            && let Some(args) = &mut self.arguments {
+            let new_args = stack_usage.stack_in[0..(stack_usage.in_len() - self.virtual_stack.len())].iter().cloned();
+            args.extend(new_args.clone());
+            for arg in new_args {
+                self.virtual_stack.push_front(VirtualVal::Virtual(arg));
+            }
+        }
+
+        if !stack_usage.in_matches_virtual(self.virtual_stack.iter()) {
             return Err(StackMismatch(
                 self.t.str(s).to_string(),
                 self.virtual_stack.clone(),
                 stack_usage.clone(),
             ));
         }
-        for _ in stack_usage.stack_in.iter() {
-            self.virtual_stack.pop().unwrap();
+        let mut code_vals = Vec::new();
+        for sp in stack_usage.stack_in.iter() {
+            if let StackParam::Typed(TypeInfo::Code(su)) = sp {
+                let v =self.virtual_stack.pop_back().unwrap();
+                if let VirtualVal::Concrete(v) = v {
+                    let code_su = self.analyze(v.iter(), false)?;
+                    if let Some(su) = su {
+                        if !su.matches(&code_su) {
+                            return Err(AnalysisError::TypeMismatch(format!("eval({}) of {}", code_vals.len(), self.t.str(s).to_string()), code_su.clone(), su.clone()))
+                        }
+                        code_vals.push(code_su);
+                    }
+                } else {
+                    return Err(AnalysisError::AmbiguousType(self.virtual_stack.clone(), stack_usage.clone()))
+                }
+            } else {
+                self.virtual_stack.pop_back().unwrap();
+            }
         }
         for p in stack_usage.stack_out.iter() {
-            self.virtual_stack.push(VirtualVal::Virtual(p.clone()));
+            self.virtual_stack.push_back(VirtualVal::Virtual(p.clone()));
         }
         Ok(())
     }
@@ -335,17 +386,26 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    fn analyze(&mut self, program: &Vals) -> AnalysisResult {
-        for step in program.iter().rev() {
+    fn analyze<'p>(&mut self, program: impl ArrayLikeIter<'p, Val>, constrained: bool) -> AnalysisResult {
+        let old_args = self.arguments.take();
+        self.arguments = if constrained {
+            None
+        } else {
+            Some(vec![])
+        };
+        for step in program.rev() {
             match step {
                 Val::Int(_) | Val::Kw(_) | Val::List(_) | Val::Ref(_) => {
-                    self.virtual_stack.push(VirtualVal::Concrete(step.clone()));
+                    self.virtual_stack.push_back(VirtualVal::Concrete(step.clone()));
                 }
                 Val::Sym(s) => self.analyze_sym(*s)?,
             }
         }
+        let mut args = self.arguments.take().unwrap_or(Vec::new());
+        args.reverse();
+        self.arguments = old_args;
         Ok(StackUsage {
-            stack_in: vec![],
+            stack_in: args,
             stack_out: vec![StackParam::Any; self.stack_depth()],
         })
     }
@@ -353,5 +413,5 @@ impl<'a> Ctx<'a> {
 
 pub fn analyze(t: &SymbolTable, program: &Vals) -> AnalysisResult {
     let bi = builtin_info(t);
-    Ctx::new(t, &bi).analyze(program)
+    Ctx::new(t, &bi).analyze(program.iter(), true)
 }
