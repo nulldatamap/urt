@@ -1,7 +1,6 @@
-use crate::rt::eval::{Builtin, Eval, LexiconScope, Slot, Value};
+use crate::rt::eval::{Builtin, Eval, LexiconScope, Slot};
 use crate::rt::val::{
-    Sym, SymbolTable, Val, Vals, INT_SYM, KEYWORD_SYM,
-    LIST_SYM, SYMBOL_SYM, VAL_FALSE, VAL_TRUE,
+    INT_SYM, KEYWORD_SYM, LIST_SYM, SYMBOL_SYM, Sym, SymbolTable, VAL_FALSE, VAL_TRUE, Val, Vals,
 };
 use std::collections::HashMap;
 
@@ -205,7 +204,7 @@ macro_rules! b_typed {
 }
 
 #[inline(always)]
-fn index_helper(i0: i64, n0 : usize, allow_end: bool) -> Option<usize> {
+fn index_helper(i0: i64, n0: usize, allow_end: bool) -> Option<usize> {
     let n = n0 as i64;
     let i = if i0 < 0 {
         if i0 == -1 && n == 0 && allow_end {
@@ -504,12 +503,16 @@ fn b_locals(e: &mut Eval) -> bool {
         |ls, scope, e| {
             for l in ls.iter().rev() {
                 let Val::Sym(_) = l else {
-                    eprintln!("Invalid local: {:?}", Value(&e.sym_table, l));
-                    return Some(ls)
+                    eprintln!("Invalid local: {:?}", e.sym_table.show(l));
+                    return Some(ls);
                 };
             }
 
-            for (l, v) in ls.iter().rev().zip(e.stack.drain(e.stack.len() - ls.len()..)) {
+            for (l, v) in ls
+                .iter()
+                .rev()
+                .zip(e.stack.drain(e.stack.len() - ls.len()..))
+            {
                 scope.insert(l.sym(), Slot::Val(v.into_sharable()));
             }
 
@@ -523,8 +526,8 @@ fn b_define(e: &mut Eval) -> bool {
         |ds, _e| ds.len() % 2 == 0,
         |ds, scope, e| {
             if ds.len() % 2 == 1 {
-                eprintln!("Invalid definitions: {{{:?}}}", Value(&e.sym_table, &ds));
-                return Some(ds)
+                eprintln!("Invalid definitions: {{{:?}}}", e.sym_table.show(&ds));
+                return Some(ds);
             };
             for i in 0..(ds.len() / 2) {
                 let k = ds.nth(i * 2);
@@ -532,10 +535,10 @@ fn b_define(e: &mut Eval) -> bool {
                 if !(k.is_sym() && v.is_list()) {
                     eprintln!(
                         "Invalid definition: {:?} {:?}",
-                        Value(&e.sym_table, &k),
-                        Value(&e.sym_table, &v)
+                        e.sym_table.show(k),
+                        e.sym_table.show(v),
                     );
-                    return Some(ds)
+                    return Some(ds);
                 }
                 // TODO: We could avoid the clone here
                 scope.insert(k.sym(), Slot::Quote(v.as_list_ref()));

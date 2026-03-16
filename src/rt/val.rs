@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
-use std::fmt::Formatter;
+use std::fmt::{Formatter, Write};
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -50,6 +50,52 @@ impl SymbolTable {
             .find(|kv| *kv.1 == x)
             .expect("Invalid intern string")
             .0
+    }
+
+    pub fn show<'a, T>(&'a self, x: &'a T) -> impl fmt::Debug + 'a
+    where
+        T: Showable,
+    {
+        struct Shower<'a, T> {
+            t: &'a SymbolTable,
+            x: &'a T,
+        }
+
+        impl<'a, T> fmt::Debug for Shower<'a, T>
+        where
+            T: Showable,
+        {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                self.x.show(self.t, f)
+            }
+        }
+
+        Shower { t: self, x }
+    }
+}
+
+pub trait Showable {
+    fn show(&self, t: &SymbolTable, f: &mut Formatter) -> fmt::Result;
+
+    fn show_many<'a, T>(
+        vs: impl Iterator<Item = &'a T>,
+        t: &SymbolTable,
+        f: &mut Formatter,
+    ) -> fmt::Result
+    where
+        T: Showable + 'a,
+    {
+        let mut first = true;
+        f.write_char('{')?;
+        for v in vs {
+            if !first {
+                f.write_char(' ')?;
+            }
+
+            v.show(t, f)?;
+            first = false;
+        }
+        f.write_char('}')
     }
 }
 
@@ -106,6 +152,12 @@ impl Ref {
     pub fn slice(&mut self, range: Range<usize>) {
         self.range.start += range.start;
         self.range.end = self.range.start + range.len();
+    }
+}
+
+impl Showable for Ref {
+    fn show(&self, t: &SymbolTable, f: &mut Formatter) -> fmt::Result {
+        Self::show_many(self.iter(), t, f)
     }
 }
 
@@ -196,19 +248,19 @@ impl Val {
             Val::List(vs) => {
                 vs.drain(to..);
                 vs.drain(..from);
-            },
+            }
             Val::Ref(r) => {
                 r.slice(from..to);
-            },
+            }
             _ => panic!("Can't `slice` on a non-list: {:?}", self),
         }
     }
 
-    pub fn nth(&self, i : usize) -> &Val {
+    pub fn nth(&self, i: usize) -> &Val {
         match self {
             Val::List(vs) => &vs[i],
             Val::Ref(r) => &r.vals[r.range.start + i],
-            _ => panic!("Can't index into a non-list: {:?}", self)
+            _ => panic!("Can't index into a non-list: {:?}", self),
         }
     }
 
@@ -309,109 +361,36 @@ impl Val {
     }
 }
 
+impl Showable for Val {
+    fn show(&self, t: &SymbolTable, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Val::Int(i) => write!(f, "{}", *i),
+            Val::Sym(s) => f.write_str(t.str(*s)),
+            Val::Kw(s) => write!(f, ":{}", t.str(*s)),
+            Val::List(vs) => <Val as Showable>::show_many(vs.iter(), t, f),
+            Val::Ref(r) => r.show(t, f),
+        }
+    }
+}
+
+impl Showable for Vec<Val> {
+    fn show(&self, t: &SymbolTable, f: &mut Formatter) -> fmt::Result {
+        let mut first = true;
+        for v in self.iter().rev() {
+            if !first {
+                f.write_char(' ')?;
+            }
+            v.show(t, f)?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
 pub type Vals = VecDeque<Val>;
 
-// impl fmt::Debug for Val {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             Val::Int(i) => write!(f, "{i}"),
-//             Val::Sym(Sym(s)) => write!(f, "##{s:X}"),
-//             Val::Kw(Sym(s)) => write!(f, ":##{s:X}"),
-//             _ => {
-//                 let vals = match self {
-//                     Val::List(vs) => vs,
-//                     Val::Ref(r) => r.as_ref(),
-//                     _ => unreachable!(),
-//                 };
-//                 write!(f, "{{")?;
-//                 let mut first = true;
-//                 for v in vals {
-//                     if !first {
-//                         write!(f, " ")?;
-//                     }
-//                     first = false;
-//                     write!(f, "{:?}", v)?;
-//                 }
-//                 write!(f, "}}")
-//             }
-//         }
-//     }
-// }
-//
-
-pub struct RefProgram<'a>(pub &'a SymbolTable, pub &'a Ref);
-pub struct Program<'a>(pub &'a SymbolTable, pub &'a Vals);
-pub struct Values<'a>(pub &'a SymbolTable, pub &'a [Val]);
-pub struct Value<'a>(pub &'a SymbolTable, pub &'a Val);
-
-impl<'a> fmt::Debug for RefProgram<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let start = self
-            .1
-            .iter()
-            .rposition(|x| matches!(x, Val::Sym(k) if *k == LEAVE_SCOPE_SYM))
-            .map(|x| x + 1)
-            .unwrap_or(0);
-        let mut first = true;
-        if start > 0 {
-            write!(f, "... ")?;
-        }
-        for v in self.1.iter().skip(start) {
-            if !first {
-                write!(f, " ")?;
-            }
-            first = false;
-            write!(f, "{:?} ", Value(self.0, v))?;
-        }
-        Ok(())
-    }
-}
-
-impl<'a> fmt::Debug for Value<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.1 {
-            Val::Int(i) => write!(f, "{i}"),
-            Val::Sym(s) => write!(f, "{}", self.0.str(*s)),
-            Val::Kw(s) => write!(f, ":{}", self.0.str(*s)),
-            Val::List(vals) => Program(self.0, vals).fmt(f),
-            Val::Ref(vals) => RefProgram(self.0, vals).fmt(f),
-        }
-    }
-}
-
-impl<'a> fmt::Debug for Program<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let start = self
-            .1
-            .iter()
-            .rposition(|x| matches!(x, Val::Sym(k) if *k == LEAVE_SCOPE_SYM))
-            .map(|x| x + 1)
-            .unwrap_or(0);
-        let mut first = true;
-        if start > 0 {
-            write!(f, "... ")?;
-        }
-        for v in self.1.iter().skip(start) {
-            if !first {
-                write!(f, " ")?;
-            }
-            first = false;
-            write!(f, "{:?} ", Value(self.0, v))?;
-        }
-        Ok(())
-    }
-}
-
-impl<'a> fmt::Debug for Values<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut first = true;
-        for v in self.1.iter().rev() {
-            if !first {
-                write!(f, " ")?;
-            }
-            first = false;
-            write!(f, "{:?} ", Value(self.0, v))?
-        }
-        Ok(())
+impl Showable for Vals {
+    fn show(&self, t: &SymbolTable, f: &mut Formatter) -> fmt::Result {
+        <Val as Showable>::show_many(self.iter(), t, f)
     }
 }

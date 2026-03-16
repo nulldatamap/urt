@@ -2,8 +2,7 @@ mod rt;
 
 use rt::eval::Eval;
 use rt::parser::parse;
-use rt::val::{SymbolTable, Vals, Values};
-
+use rt::val::{SymbolTable, Vals};
 
 fn main() {
     let mut t = SymbolTable::new();
@@ -17,8 +16,11 @@ fn main() {
 
     let mut e = Eval::new(program, t);
     while e.step() {
-        // println!("{:?} | {:?}", ContView(&e.sym_table, &e.program), Values(&e.sym_table, &e.stack[..]));
-        // println!("## {:?}", e.program);
+        println!(
+            "{:?} | {:?}",
+            e.sym_table.show(&e.program),
+            e.sym_table.show(&e.stack)
+        );
     }
-    println!("{:?}", Values(&e.sym_table, &e.stack[..]));
+    println!("{:?}", e.sym_table.show(&e.stack));
 }

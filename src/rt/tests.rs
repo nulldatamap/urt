@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use crate::rt::eval::{eval, ContView};
+use crate::rt::eval::eval;
 use crate::rt::parser::parse;
-use crate::rt::val::{Program, SymbolTable, Vals, Values};
+use crate::rt::val::{SymbolTable, Vals};
 
 fn evals<'a>(program: &'a str, stack: &'a str) {
     let mut t = SymbolTable::new();
@@ -13,8 +13,8 @@ fn evals<'a>(program: &'a str, stack: &'a str) {
         Err(e) => {
             panic!(
                 "Evaluation failed:\n{:?} | {:?}",
-                ContView(&e.sym_table, &e.program),
-                Values(&e.sym_table, &e.stack)
+                e.sym_table.show(&e.program),
+                e.sym_table.show(&e.stack),
             );
         }
     }
@@ -39,10 +39,10 @@ fn fails(program: &'static str, fail_tail: &'static str, stack: &'static str) {
             assert!(
                 matches,
                 "Unexpected program fail state!\nExpected: {:?} | {:?}\nGot: {:?} | {:?}",
-                Program(&e.sym_table, &p0),
-                Program(&e.sym_table, &res),
-                ContView(&e.sym_table, &e.program),
-                Values(&e.sym_table, &e.stack)
+                e.sym_table.show(&p0),
+                e.sym_table.show(&res),
+                e.sym_table.show(&e.program),
+                e.sym_table.show(&e.stack)
             );
         }
     }
@@ -397,11 +397,20 @@ fn list_ref_specialization() {
     evals("last push-front 1 { my-ref based list }", "list");
 
     evals("init { my-ref based list }", "{ my-ref based }");
-    evals("init push-back 1 { my-ref based list }", "{ my-ref based list }");
+    evals(
+        "init push-back 1 { my-ref based list }",
+        "{ my-ref based list }",
+    );
 
     evals("tail { my-ref based list }", "{ based list }");
-    evals("tail push-front 1 { my-ref based list }", "{ my-ref based list }");
+    evals(
+        "tail push-front 1 { my-ref based list }",
+        "{ my-ref based list }",
+    );
 
     evals("slice 1 3 { my-ref based long list }", "{ based long }");
-    evals("slice 1 3 push-back 1 { my-ref based long list }", "{ based long }");
+    evals(
+        "slice 1 3 push-back 1 { my-ref based long list }",
+        "{ based long }",
+    );
 }

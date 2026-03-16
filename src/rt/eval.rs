@@ -1,11 +1,12 @@
 use crate::rt::builtins;
+use crate::rt::val::Showable;
 pub(crate) use crate::rt::val::{
-    Program, Ref, Sym, SymbolTable, Val, Vals, Value, LEAVE_SCOPE_SYM, VAL_LEAVE_SCOPE,
+    LEAVE_SCOPE_SYM, Ref, Sym, SymbolTable, VAL_LEAVE_SCOPE, Val, Vals,
 };
+use micromap::Map;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
-use micromap::Map;
 
 pub type Builtin = fn(&mut Eval) -> bool;
 
@@ -17,7 +18,10 @@ pub enum Continuation {
 
 pub enum ContinuationIter<'a> {
     Vals(std::collections::vec_deque::Iter<'a, Val>),
-    Chunks(std::slice::Iter<'a, Cont>, Option<std::collections::vec_deque::Iter<'a, Val>>),
+    Chunks(
+        std::slice::Iter<'a, Cont>,
+        Option<std::collections::vec_deque::Iter<'a, Val>>,
+    ),
 }
 
 impl<'a> Iterator for ContinuationIter<'a> {
@@ -130,7 +134,7 @@ impl Continuation {
                         Cont::Ref(vs) => {
                             let Some(r) = vs.pop_back().cloned() else {
                                 _ = cs.pop();
-                                continue
+                                continue;
                             };
                             if vs.len() == 0 {
                                 _ = cs.pop();
@@ -140,7 +144,7 @@ impl Continuation {
                     }
                 }
             };
-            return r
+            return r;
         }
     }
 
@@ -158,12 +162,10 @@ pub enum Cont {
     Ref(Ref),
 }
 
-pub struct ContView<'a>(pub &'a SymbolTable, pub &'a Continuation);
-
-impl<'a> fmt::Debug for ContView<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self.1 {
-            Continuation::Vals(vs) => Program(self.0, vs).fmt(f),
+impl Showable for Continuation {
+    fn show(&self, t: &SymbolTable, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Continuation::Vals(vs) => <Val as Showable>::show_many(vs.iter(), t, f),
             Continuation::Chunks(cs) => {
                 let start = cs
                     .iter()
@@ -172,7 +174,7 @@ impl<'a> fmt::Debug for ContView<'a> {
                     .unwrap_or(0);
                 let mut first = true;
                 if start > 0 {
-                    write!(f, "...")?;
+                    write!(f, "... ")?;
                 }
                 for c in &cs[start..] {
                     if !first {
@@ -180,9 +182,14 @@ impl<'a> fmt::Debug for ContView<'a> {
                     }
                     match c {
                         Cont::LeaveScope => unreachable!(),
-                        Cont::Ref(v) => {
-                            for v in v.iter() {
-                                write!(f, "{:?} ", Value(self.0, v))?;
+                        Cont::Ref(r) => {
+                            let mut first = true;
+                            for v in r.iter() {
+                                if !first {
+                                    write!(f, " ")?;
+                                }
+                                v.show(t, f)?;
+                                first = false;
                             }
                         }
                     }
