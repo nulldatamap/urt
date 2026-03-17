@@ -3,7 +3,7 @@
 use crate::analysis;
 use crate::analysis::StackParam;
 use crate::analysis::TypeInfo;
-use crate::analysis::{stack_usage, AnalysisError, AnalysisResult, StackUsage};
+use crate::analysis::{AnalysisError, AnalysisResult, StackUsage, stack_usage};
 use crate::rt::parser::parse;
 use crate::rt::val::SymbolTable;
 
@@ -67,5 +67,21 @@ fn typed() {
 
     matches_usage("unquote {+ 1} 1", stack_usage!(() -> (int)));
     matches_usage("unquote swap 1 {+ 1}", stack_usage!(() -> (int)));
-    matches_usage("unquote {swap} :wow 2", stack_usage!(() -> (int kw)))
+    matches_usage("unquote {swap} :wow 2", stack_usage!(() -> (int kw)));
+
+    matches_usage("+ 1 || 1 2", stack_usage!(() -> (int)));
+    matches_usage("|| :wow 2", stack_usage!(() -> (any)));
+
+    // These fail because || doesn't force the arguments to be seen as code
+
+    // matches_usage("unquote || {+} {-} 1 2", stack_usage!(() -> (int)));
+    // matches_usage(
+    //     "unquote || {drop} {swap drop} :x 2",
+    //     stack_usage!(() -> (any)),
+    // );
+
+    assert!(matches!(
+        analyze("unquote || {drop} {} 1 2"),
+        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((anycode) -> (eval(0)))
+    ));
 }

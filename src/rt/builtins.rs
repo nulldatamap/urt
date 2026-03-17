@@ -1,6 +1,6 @@
 use crate::rt::eval::{Builtin, Eval, LexiconScope, Slot};
 use crate::rt::val::{
-    Sym, SymbolTable, Val, Vals, INT_SYM, KEYWORD_SYM, LIST_SYM, SYMBOL_SYM, VAL_FALSE, VAL_TRUE,
+    INT_SYM, KEYWORD_SYM, LIST_SYM, SYMBOL_SYM, Sym, SymbolTable, VAL_FALSE, VAL_TRUE, Val, Vals,
 };
 use std::collections::HashMap;
 

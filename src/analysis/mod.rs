@@ -3,6 +3,7 @@ mod tests;
 use crate::analysis::AnalysisError::StackMismatch;
 use crate::rt::eval::{Sym, Val, Vals};
 use crate::rt::val::SymbolTable;
+use std::cmp::PartialEq;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Formatter, Write};
@@ -13,6 +14,7 @@ pub enum AnalysisError {
     StackMismatch(String, VirtualStack, StackUsage),
     TypeMismatch(String, StackUsage, StackUsage),
     AmbiguousType(VirtualStack, StackUsage),
+    TypeMergeError(Option<String>, StackParam, StackParam),
 }
 
 trait ArrayLikeIter<'a, T: 'a>:
@@ -124,16 +126,38 @@ impl fmt::Debug for TypeInfo {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+enum Eval {
+    NoEval,
+    Eval,
+}
+use self::Eval::*;
+
 #[derive(Clone, PartialEq, Eq)]
 enum StackParam {
     Any,
     Typed(TypeInfo),
     Eval(usize),
     Arg(usize, Option<TypeInfo>),
-    // MergeEval(usize, usize),
+    Merge(usize, usize, Eval),
 }
 
 impl StackParam {
+    fn is_any(&self) -> bool {
+        match self {
+            Self::Any | Self::Arg(_, None) => true,
+            _ => false,
+        }
+    }
+
+    fn type_info(&self) -> Option<TypeInfo> {
+        match self {
+            Self::Any | Self::Arg(_, None) => None,
+            Self::Typed(t) | Self::Arg(_, Some(t)) => Some(t.clone()),
+            _ => panic!("`type_info()` is invalid for: {:?}", self),
+        }
+    }
+
     fn matches(&self, other: &Self) -> bool {
         match (self, other) {
             (StackParam::Any, _)
@@ -165,6 +189,27 @@ impl StackParam {
             _ => panic!("{:?} is not an in-type!", self),
         }
     }
+
+    fn merge(&self, other: &Self) -> Result<Self> {
+        if self == other {
+            return Ok(self.clone());
+        }
+
+        match (self.type_info(), other.type_info()) {
+            (None, None) => Ok(Self::Any),
+            (Some(x), Some(y)) if x == y => Ok(self.clone()),
+            (Some(TypeInfo::Code(Some(sp0))), Some(TypeInfo::Code(Some(sp1)))) => {
+                unimplemented!()
+            }
+            (Some(TypeInfo::Code(None)), Some(TypeInfo::Code(None))) => {
+                Ok(Self::Typed(TypeInfo::anycode()))
+            }
+            (Some(TypeInfo::Code(_)), _) | (_, Some(TypeInfo::Code(_))) => Err(
+                AnalysisError::TypeMergeError(None, self.clone(), other.clone()),
+            ),
+            _ => Ok(Self::Any),
+        }
+    }
 }
 
 impl fmt::Debug for StackParam {
@@ -180,6 +225,13 @@ impl fmt::Debug for StackParam {
                     write!(f, "arg({})", i)
                 }
             }
+            StackParam::Merge(i, j, eval) => write!(
+                f,
+                "{}({}, {})",
+                if *eval == Eval { "merge-eval" } else { "merge" },
+                i,
+                j
+            ),
         }
     }
 }
@@ -294,10 +346,27 @@ struct LocalInfo {
     stack_usage: StackUsage,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum VirtualVal {
     Concrete(Val),
     Virtual(StackParam),
+}
+
+impl VirtualVal {
+    fn merge(&self, other: &Self) -> Result<Self> {
+        if self == other {
+            return Ok(self.clone());
+        }
+
+        match (self, other) {
+            (Self::Concrete(v), x) | (x, Self::Concrete(v)) => {
+                Self::Virtual(StackParam::Typed(TypeInfo::from_concrete(v))).merge(x)
+            }
+            (Self::Virtual(sp0), VirtualVal::Virtual(sp1)) => {
+                Ok(VirtualVal::Virtual(sp0.merge(sp1)?))
+            }
+        }
+    }
 }
 
 type VirtualStack = VecDeque<VirtualVal>;
@@ -330,6 +399,18 @@ macro_rules! stack_usage {
     (stack_param [$($res:tt)*] eval($x:literal) $($rest:tt)*) => (
         stack_usage!(stack_param
           [$($res)* StackParam::Eval($x), ]
+          $($rest)*
+        )
+    );
+    (stack_param [$($res:tt)*] merge($x:literal, $y:literal) $($rest:tt)*) => (
+        stack_usage!(stack_param
+          [$($res)* StackParam::Merge($x, $y, NoEval), ]
+          $($rest)*
+        )
+    );
+    (stack_param [$($res:tt)*] merge-eval($x:literal, $y:literal) $($rest:tt)*) => (
+        stack_usage!(stack_param
+          [$($res)* StackParam::Merge($x, $y, Eval), ]
           $($rest)*
         )
     );
@@ -396,8 +477,8 @@ fn builtin_info(t: &SymbolTable) -> BuiltinInfo {
         "true"  () -> (bool);
         "false" () -> (bool);
         // TODO: merge(0, 1) maybe?
-        "&&"    (any any) -> (any);
-        "||"    (any any) -> (any);
+        "&&"    (any any) -> (merge(0, 1));
+        "||"    (any any) -> (merge(0, 1));
         "not"   (any any) -> (bool);
 
         "unquote" (anycode) -> (eval(0));
@@ -413,6 +494,7 @@ fn builtin_info(t: &SymbolTable) -> BuiltinInfo {
 enum Target {
     Sym(Sym),
     EvalOf(Box<Target>, usize),
+    MergeOf(Box<Target>, usize, usize),
 }
 
 impl<'a> Ctx<'a> {
@@ -444,6 +526,7 @@ impl<'a> Ctx<'a> {
         match t {
             Target::Sym(s) => self.t.str(*s).to_string(),
             Target::EvalOf(s, i) => format!("{}:eval({})", self.show_target(s), i),
+            Target::MergeOf(s, i, j) => format!("{}:merge({}, {})", self.show_target(s), i, j),
         }
     }
 
@@ -510,6 +593,21 @@ impl<'a> Ctx<'a> {
         }
         for p in stack_usage.stack_out.iter() {
             match p {
+                StackParam::Merge(i, j, NoEval) => {
+                    let i = args.len() - *i - 1;
+                    let j = args.len() - *j - 1;
+                    match args[i].merge(&args[j]) {
+                        Ok(x) => self.virtual_stack.push_back(x),
+                        Err(AnalysisError::TypeMergeError(None, x, y)) => {
+                            return Err(AnalysisError::TypeMergeError(
+                                Some(self.show_target(&Target::MergeOf(Box::new(s), i, j))),
+                                x,
+                                y,
+                            ));
+                        }
+                        Err(err) => return Err(err),
+                    }
+                }
                 StackParam::Eval(i0) => {
                     // code_vals and below args are both stored in reverse:
                     let i = code_vals.len() - *i0 - 1;
