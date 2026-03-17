@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use crate::analysis::TypeInfo;
-use crate::analysis::StackParam;
 use crate::analysis;
+use crate::analysis::StackParam;
+use crate::analysis::TypeInfo;
 use crate::analysis::{stack_usage, AnalysisError, AnalysisResult, StackUsage};
 use crate::rt::parser::parse;
 use crate::rt::val::SymbolTable;
@@ -51,17 +51,21 @@ fn matches_usage(src: &str, exp: StackUsage) {
 
 #[test]
 fn typed() {
-    matches_usage("+ 1 2", stack_usage!(() -- (int)));
+    matches_usage("+ 1 2", stack_usage!(() -> (int)));
+
+    matches_usage("+ swap 1 2", stack_usage!(() -> (int)));
 
     assert!(matches!(
         analyze("+ 1 {}"),
-        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((int int) -- (int))
+        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((int int) -> (int))
     ));
 
     assert!(matches!(
         analyze("unquote 1"),
-        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((anycode) -- (eval(0)))
+        Err(AnalysisError::StackMismatch(_, x, y)) if y == stack_usage!((anycode) -> (eval(0)))
     ));
 
-    matches_usage("unquote {+ 1} 1", stack_usage!(() -- (int)));
+    matches_usage("unquote {+ 1} 1", stack_usage!(() -> (int)));
+    matches_usage("unquote swap 1 {+ 1}", stack_usage!(() -> (int)));
+    matches_usage("unquote {swap} :wow 2", stack_usage!(() -> (int kw)))
 }

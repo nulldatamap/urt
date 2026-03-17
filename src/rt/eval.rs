@@ -1,7 +1,7 @@
 use crate::rt::builtins;
 use crate::rt::val::Showable;
 pub(crate) use crate::rt::val::{
-    LEAVE_SCOPE_SYM, Ref, Sym, SymbolTable, VAL_LEAVE_SCOPE, Val, Vals,
+    Ref, Sym, SymbolTable, Val, Vals, LEAVE_SCOPE_SYM, VAL_LEAVE_SCOPE,
 };
 use micromap::Map;
 use std::collections::HashMap;
